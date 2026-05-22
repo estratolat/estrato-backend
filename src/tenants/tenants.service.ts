@@ -1,24 +1,23 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
-import { Tenant } from '@prisma/client';
 
 @Injectable()
 export class TenantsService {
   constructor(private prisma: PrismaService) {}
 
-  async findBySlug(slug: string): Promise<Tenant | null> {
+  async findBySlug(slug: string) {
     return this.prisma.tenant.findUnique({
       where: { slug },
     });
   }
 
-  async findById(id: string): Promise<Tenant | null> {
+  async findById(id: string) {
     return this.prisma.tenant.findUnique({
       where: { id },
     });
   }
 
-  async getOrThrow(slug: string): Promise<Tenant> {
+  async getOrThrow(slug: string) {
     const tenant = await this.findBySlug(slug);
     if (!tenant) {
       throw new NotFoundException(`Tenant ${slug} no encontrado`);
@@ -32,7 +31,7 @@ export class TenantsService {
     cargo_busca?: string;
     slogan?: string;
     plan?: string;
-  }): Promise<Tenant> {
+  }) {
     return this.prisma.tenant.create({
       data: {
         ...data,
@@ -42,14 +41,14 @@ export class TenantsService {
     });
   }
 
-  async update(id: string, data: Partial<Tenant>): Promise<Tenant> {
+  async update(id: string, data: any) {
     return this.prisma.tenant.update({
       where: { id },
       data,
     });
   }
 
-  async toggleVeda(id: string, veda_activa: boolean): Promise<Tenant> {
+  async toggleVeda(id: string, veda_activa: boolean) {
     return this.prisma.tenant.update({
       where: { id },
       data: { veda_activa },

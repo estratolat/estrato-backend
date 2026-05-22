@@ -11,7 +11,6 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId, Tenant } from '../common/decorators/tenant.decorator';
-import { Tenant as TenantEntity } from '@prisma/client';
 
 @ApiTags('Tenants')
 @Controller('tenants')

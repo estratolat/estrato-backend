@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -24,11 +24,11 @@ async function main() {
 
   // 2. Crear usuarios de prueba
   const users = [
-    { email: 'owner@demo.com', nombre: 'Administrador', rol: UserRole.owner },
-    { email: 'candidato@demo.com', nombre: 'Candidato Demo', rol: UserRole.candidato },
-    { email: 'coord@demo.com', nombre: 'Coordinador General', rol: UserRole.coord_general },
-    { email: 'brigadista@demo.com', nombre: 'Brigadista 1', rol: UserRole.brigadista },
-    { email: 'cm@demo.com', nombre: 'Community Manager', rol: UserRole.cm },
+    { email: 'owner@demo.com', nombre: 'Administrador', rol: 'owner' },
+    { email: 'candidato@demo.com', nombre: 'Candidato Demo', rol: 'candidato' },
+    { email: 'coord@demo.com', nombre: 'Coordinador General', rol: 'coord_general' },
+    { email: 'brigadista@demo.com', nombre: 'Brigadista 1', rol: 'brigadista' },
+    { email: 'cm@demo.com', nombre: 'Community Manager', rol: 'cm' },
   ];
 
   for (const user of users) {
