@@ -43,8 +43,6 @@ model Tenant {
   metricasDiarias       MetricaDiaria[]
   avisosPrivacidad      AvisoPrivacidad[]
   recorridos            Recorrido[]
-  asistencias           Asistencia[]
-
   @@map("tenants")
 }
 
@@ -72,7 +70,6 @@ model Usuario {
   mensajes  Mensaje[] @relation("MensajeAtendidoPor")
   boletinesAprobados Boletin[] @relation("BoletinAprobadoPor")
   bitacoraINE BitacoraINE[]
-  llamadasVapi LlamadaVapi[]
   campanasVapi CampanaVapi[]
   boletinesCreados Boletin[] @relation("BoletinCreadoPor")
 
