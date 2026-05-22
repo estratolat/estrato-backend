@@ -1,0 +1,489 @@
+// =====================================================
+// ESTRATO SaaS - Esquema de Base de Datos PostgreSQL
+// Multi-tenant con PostGIS para campañas políticas
+// =====================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// TENANT - Candidato/Campaña
+// ==========================================
+model Tenant {
+  id                    String    @id @default(uuid()) @db.Uuid
+  slug                  String    @unique // juan-alcalde-leon
+  dominio_personalizado String?   // juanalcalde.mx (opcional)
+  url_completa          String    @default("")
+  nombre_candidato      String
+  cargo_busca           String?   // Alcalde, Diputado Local, etc.
+  slogan                String?
+  plan                  String    @default("basico") // basico, pro, enterprise
+  veda_activa           Boolean   @default(false)
+  activo                Boolean   @default(true)
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  // Relaciones
+  usuarios              Usuario[]
+  votantes              Votante[]
+  lideres               Lider[]
+  eventos               Evento[]
+  apoyos                Apoyo[]
+  mensajes              Mensaje[]
+  boletines             Boletin[]
+  campanasVapi          CampanaVapi[]
+  llamadasVapi          LlamadaVapi[]
+  bitacoraINE           BitacoraINE[]
+  metricasDiarias       MetricaDiaria[]
+  avisosPrivacidad      AvisoPrivacidad[]
+  recorridos            Recorrido[]
+  asistencias           Asistencia[]
+
+  @@map("tenants")
+}
+
+// ==========================================
+// USUARIOS - Equipo de campaña
+// ==========================================
+model Usuario {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenant_id  String   @db.Uuid
+  email      String   @unique
+  nombre     String?
+  rol        UserRole @default(brigadista)
+  zona_id    String?  @db.Uuid // null si ve todo
+  activo     Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relaciones
+  tenant    Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  zona      Zona?     @relation(fields: [zona_id], references: [id])
+  eventos   Evento[]  @relation("EventoCreadoPor")
+  apoyos    Apoyo[]   @relation("ApoyoEntregadoPor")
+  recorridos Recorrido[]
+  asistencias Asistencia[] @relation("AsistenciaRegistradaPor")
+  mensajes  Mensaje[] @relation("MensajeAtendidoPor")
+  boletinesAprobados Boletin[] @relation("BoletinAprobadoPor")
+  bitacoraINE BitacoraINE[]
+  llamadasVapi LlamadaVapi[]
+  campanasVapi CampanaVapi[]
+  boletinesCreados Boletin[] @relation("BoletinCreadoPor")
+
+  @@index([tenant_id, rol])
+  @@index([email])
+  @@map("usuarios")
+}
+
+enum UserRole {
+  owner
+  candidato
+  coord_general
+  coord_zona
+  brigadista
+  cm
+}
+
+// ==========================================
+// ZONAS - Asignación territorial
+// ==========================================
+model Zona {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_id       String   @db.Uuid
+  nombre          String
+  secciones       String[] // Array de secciones electorales
+  coordenadas     Json?    // GeoJSON Polygon
+  color           String   @default("#3B82F6")
+  activa          Boolean  @default(true)
+  created_at      DateTime @default(now())
+
+  // Relaciones
+  usuarios        Usuario[]
+
+  @@index([tenant_id])
+  @@map("zonas")
+}
+
+// ==========================================
+// VOTANTES/SIMPATIZANTES
+// ==========================================
+model Votante {
+  id                      String    @id @default(uuid()) @db.Uuid
+  tenant_id               String    @db.Uuid
+  nombre                  String?
+  telefono                String?   // Encriptado con pgcrypto
+  telefono_hash           String?   // Para búsquedas únicas
+  curp                    String?   // Encriptado
+  seccion_electoral       String?   @db.VarChar(4)
+  colonia                 String?
+  municipio               String?
+  estado                  String?
+  coordenadas             Json?     // {lat: number, lng: number}
+  nivel_apoyo             Int?      @db.SmallInt // 1-5
+  tags                    String[]
+  origen_qr               String?   // valle-dorado-01
+  aviso_privacidad_version Int?
+  consentimiento_ip       String?
+  consentimiento_fecha    DateTime?
+  ultimo_contacto         DateTime?
+  es_lider                Boolean   @default(false)
+  activo                  Boolean   @default(true)
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  // Relaciones
+  tenant                  Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  lider                   Lider?
+  apoyos                  Apoyo[]
+  asistencias             Asistencia[]
+  mensajes                Mensaje[]
+  llamadasVapi            LlamadaVapi[]
+
+  @@index([tenant_id, seccion_electoral])
+  @@index([tenant_id, nivel_apoyo])
+  @@index([telefono_hash])
+  @@index([origen_qr])
+  @@map("votantes")
+}
+
+// ==========================================
+// LÍDERES TERRITORIALES
+// ==========================================
+model Lider {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenant_id        String    @db.Uuid
+  votante_id       String    @unique @db.Uuid
+  lider_padre_id   String?   @db.Uuid // Jerarquía MLM
+  alcance_estimado Int?
+  score            Int       @default(0)
+  activo           Boolean   @default(true)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  // Relaciones
+  tenant           Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  votante          Votante   @relation(fields: [votante_id], references: [id], onDelete: Cascade)
+  liderPadre       Lider?    @relation("LiderJerarquia", fields: [lider_padre_id], references: [id])
+  lideresHijos     Lider[]   @relation("LiderJerarquia")
+
+  @@index([tenant_id, lider_padre_id])
+  @@map("lideres")
+}
+
+// ==========================================
+// EVENTOS/MÍTINES
+// ==========================================
+model Evento {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenant_id           String   @db.Uuid
+  nombre              String
+  descripcion         String?
+  direccion           String?
+  coordenadas         Json?    // {lat, lng}
+  fecha_inicio        DateTime
+  fecha_fin           DateTime?
+  qr_code             String   @unique
+  asistentes_estimados Int?
+  status              String   @default("programado") // programado, en_curso, finalizado, cancelado
+  created_by          String?  @db.Uuid
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Relaciones
+  tenant              Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  creador             Usuario? @relation("EventoCreadoPor", fields: [created_by], references: [id])
+  asistencias         Asistencia[]
+
+  @@index([tenant_id, fecha_inicio])
+  @@index([qr_code])
+  @@map("eventos")
+}
+
+// ==========================================
+// ASISTENCIAS A EVENTOS
+// ==========================================
+model Asistencia {
+  id               String   @id @default(uuid()) @db.Uuid
+  evento_id        String   @db.Uuid
+  votante_id       String   @db.Uuid
+  registrado_por   String?  @db.Uuid
+  coordenadas      Json?    // GPS al momento del registro
+  metodo_registro  String   @default("qr") // qr, manual, app
+  created_at       DateTime @default(now())
+
+  // Relaciones
+  evento           Evento   @relation(fields: [evento_id], references: [id], onDelete: Cascade)
+  votante          Votante  @relation(fields: [votante_id], references: [id], onDelete: Cascade)
+  registrador      Usuario? @relation("AsistenciaRegistradaPor", fields: [registrado_por], references: [id])
+
+  @@unique([evento_id, votante_id])
+  @@index([evento_id])
+  @@index([votante_id])
+  @@map("asistencias")
+}
+
+// ==========================================
+// APOYOS ENTREGADOS
+// ==========================================
+model Apoyo {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_id       String   @db.Uuid
+  votante_id      String   @db.Uuid
+  tipo_apoyo      String   // despensa, medicamento, lamina, etc.
+  cantidad        Int      @default(1)
+  foto_url        String?
+  foto_hash_md5   String?
+  coordenadas     Json?    // GPS de entrega
+  entregado_por   String   @db.Uuid
+  observaciones   String?
+  verificado      Boolean  @default(false)
+  fecha_entrega   DateTime @default(now())
+  created_at      DateTime @default(now())
+
+  // Relaciones
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  votante         Votante  @relation(fields: [votante_id], references: [id], onDelete: Cascade)
+  entregador      Usuario  @relation("ApoyoEntregadoPor", fields: [entregado_por], references: [id])
+
+  @@index([tenant_id, fecha_entrega])
+  @@index([votante_id])
+  @@index([tipo_apoyo])
+  @@map("apoyos")
+}
+
+// ==========================================
+// RECORRIDOS BRIGADAS
+// ==========================================
+model Recorrido {
+  id            String   @id @default(uuid()) @db.Uuid
+  usuario_id    String   @db.Uuid
+  tenant_id     String   @db.Uuid
+  coordenadas   Json     // Array de puntos {lat, lng, timestamp}
+  fecha         DateTime @default(now())
+  distancia_km  Float?
+  duracion_min  Int?
+  secciones     String[] // Secciones cubiertas
+  created_at    DateTime @default(now())
+
+  // Relaciones
+  usuario       Usuario  @relation(fields: [usuario_id], references: [id], onDelete: Cascade)
+  tenant        Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([usuario_id, fecha])
+  @@index([tenant_id, fecha])
+  @@map("recorridos")
+}
+
+// ==========================================
+// MENSAJES CRM
+// ==========================================
+model Mensaje {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenant_id         String   @db.Uuid
+  votante_id        String   @db.Uuid
+  canal             String   // whatsapp, messenger, form, sms, email
+  direccion         String   // inbound, outbound
+  contenido         String
+  template_usado    String?
+  tags_auto         String[] // NLP auto-tagging
+  atendido_por      String?  @db.Uuid
+  tiempo_respuesta_seg Int?
+  leido             Boolean  @default(false)
+  created_at        DateTime @default(now())
+
+  // Relaciones
+  tenant            Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  votante           Votante  @relation(fields: [votante_id], references: [id], onDelete: Cascade)
+  atendedor         Usuario? @relation("MensajeAtendidoPor", fields: [atendido_por], references: [id])
+
+  @@index([tenant_id, created_at])
+  @@index([votante_id, created_at])
+  @@index([canal])
+  @@map("mensajes")
+}
+
+// ==========================================
+// BOLETINES IA GENERADOS
+// ==========================================
+model Boletin {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenant_id         String    @db.Uuid
+  prompt_usuario    String
+  copy_generado   String?
+  imagen_url        String?
+  caption_redes     String?
+  aprobado          Boolean   @default(false)
+  aprobado_por      String?   @db.Uuid
+  fecha_publicacion DateTime?
+  created_by        String    @db.Uuid
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  // Relaciones
+  tenant            Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  aprobador         Usuario?  @relation("BoletinAprobadoPor", fields: [aprobado_por], references: [id])
+  creador           Usuario   @relation("BoletinCreadoPor", fields: [created_by], references: [id])
+
+  @@index([tenant_id, aprobado])
+  @@index([fecha_publicacion])
+  @@map("boletines")
+}
+
+// ==========================================
+// CAMPAÑAS VAPI (LLAMADAS)
+// ==========================================
+model CampanaVapi {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenant_id         String   @db.Uuid
+  nombre            String
+  script            String?
+  voz_id_elevenlabs String?
+  total_numeros     Int      @default(0)
+  llamadas_exitosas Int      @default(0)
+  status            String   @default("borrador") // borrador, activa, pausada, finalizada
+  created_by        String?  @db.Uuid
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relaciones
+  tenant            Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  creador           Usuario? @relation(fields: [created_by], references: [id])
+  llamadas          LlamadaVapi[]
+
+  @@index([tenant_id, status])
+  @@map("campanas_vapi")
+}
+
+// ==========================================
+// LLAMADAS VAPI
+// ==========================================
+model LlamadaVapi {
+  id              String   @id @default(uuid()) @db.Uuid
+  campana_id      String   @db.Uuid
+  votante_id      String   @db.Uuid
+  tenant_id       String   @db.Uuid
+  telefono        String
+  duracion_seg    Int?
+  status          String   // contestada, no_contesta, buzon, fallida
+  transcripcion   String?
+  sentimiento     String?  // positivo, neutral, negativo
+  audio_url       String?
+  created_at      DateTime @default(now())
+
+  // Relaciones
+  campana         CampanaVapi @relation(fields: [campana_id], references: [id], onDelete: Cascade)
+  votante         Votante     @relation(fields: [votante_id], references: [id], onDelete: Cascade)
+  tenant          Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([campana_id])
+  @@index([votante_id])
+  @@index([status])
+  @@map("llamadas_vapi")
+}
+
+// ==========================================
+// BITÁCORA INE (FISCALIZACIÓN)
+// ==========================================
+model BitacoraINE {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_id       String   @db.Uuid
+  tipo            String   // gasto_pauta, donativo, apoyo_entregado, evento
+  descripcion     String
+  monto           Decimal? @db.Decimal(12, 2)
+  evidencia_url   String?
+  usuario_id      String   @db.Uuid
+  metadata        Json?    // Datos adicionales específicos
+  created_at      DateTime @default(now())
+
+  // Relaciones
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  usuario         Usuario  @relation(fields: [usuario_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, tipo])
+  @@index([created_at])
+  @@map("bitacora_ine")
+}
+
+// ==========================================
+// MÉTRICAS DIARIAS POR SECCIÓN
+// ==========================================
+model MetricaDiaria {
+  id                  Int      @id @default(autoincrement())
+  tenant_id           String   @db.Uuid
+  seccion             String   @db.VarChar(4)
+  fecha               DateTime @db.Date
+  nuevos_registros    Int      @default(0)
+  asistencias_eventos Int      @default(0)
+  apoyos_entregados   Int      @default(0)
+  mensajes_enviados   Int      @default(0)
+  cobertura_porcentaje Float?
+  recorrido_km        Float    @default(0)
+  created_at          DateTime @default(now())
+
+  // Relaciones
+  tenant              Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, seccion, fecha])
+  @@index([tenant_id, fecha])
+  @@map("metricas_diarias")
+}
+
+// ==========================================
+// AVISOS DE PRIVACIDAD VERSIONADOS
+// ==========================================
+model AvisoPrivacidad {
+  id              Int      @id @default(autoincrement())
+  tenant_id       String   @db.Uuid
+  version         Int
+  contenido       String
+  fecha_vigencia  DateTime
+  activo          Boolean  @default(true)
+  created_at      DateTime @default(now())
+
+  // Relaciones
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, version])
+  @@map("avisos_privacidad")
+}
+
+// ==========================================
+// SECCIONES INE (CATÁLOGO)
+// ==========================================
+model SeccionINE {
+  seccion             String   @id @db.VarChar(4)
+  estado              String
+  estado_id           Int
+  municipio           String
+  municipio_id        Int
+  distrito_federal    Int?
+  distrito_local      Int?
+  padron_2024         Int?
+  lista_nominal_2024  Int?
+  coordenadas         Json?    // GeoJSON MultiPolygon
+
+  @@map("secciones_ine")
+}
+
+// ==========================================
+// RESULTADOS HISTÓRICOS INE
+// ==========================================
+model ResultadoHistorico {
+  id              Int    @id @default(autoincrement())
+  seccion         String @db.VarChar(4)
+  anio            Int    // 2018, 2021, 2024
+  partido_ganador String
+  votos_ganador   Int?
+  votos_totales   Int?
+  participacion_pct Float?
+
+  @@unique([seccion, anio])
+  @@index([seccion])
+  @@map("resultados_historicos")
+}
