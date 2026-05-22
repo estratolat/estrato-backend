@@ -25,6 +25,25 @@ async function bootstrap() {
   });
 
   // Validation
-  app.useGlobalPipe
-(Content too long. Truncating to first 1500 characters)
-New data exceeds the maximum length allowed for a single write. The file content was too long and was truncated.
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    forbidNonWhitelisted: true,
+  }));
+
+  // Swagger docs
+  const config = new DocumentBuilder()
+    .setTitle('ESTRATO API')
+    .setDescription('API para campañas políticas')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
+
+  // Port configuration for Railway
+  const port = process.env.PORT || 4000;
+  await app.listen(port);
+  console.log(`ESTRATO API running on port ${port}`);
+}
+bootstrap();
