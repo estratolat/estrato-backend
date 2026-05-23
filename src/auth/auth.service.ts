@@ -56,10 +56,15 @@ export class AuthService {
   }
 
   async getMe(userId: string) {
-    return this.prisma.usuario.findUnique({
+    const user = await this.prisma.usuario.findUnique({
       where: { id: userId },
       include: { tenant: true },
-      omit: { /*password_hash: true*/ },
     });
+    if (user) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { /*password_hash,*/ ...result } = user;
+      return result;
+    }
+    return null;
   }
 }
