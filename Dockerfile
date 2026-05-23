@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies (using npm install instead of npm ci)
+# Install dependencies
 RUN npm install --legacy-peer-deps
 
 # Generate Prisma client
@@ -31,16 +31,18 @@ COPY package*.json ./
 RUN npm install --legacy-peer-deps --production && \
     npm install --legacy-peer-deps prisma @prisma/client
 
-# Copy Prisma schema and generated client from builder
+# Copy Prisma schema
 COPY prisma ./prisma/
+
+# Copy built application from builder (copy everything including dist)
+COPY --from=builder /app/dist ./dist
+
+# Copy Prisma generated files
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-# Copy built application from builder
-COPY --from=builder /app/dist ./dist
 
 # Expose port
 EXPOSE 4000
 
 # Start command
-CMD ["npm", "run", "start:prod"]
+CMD ["node", "dist/main"]
