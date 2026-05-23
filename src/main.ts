@@ -6,7 +6,11 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
-async function bootstrap() {
+let cachedApp: any;
+
+async function createApp() {
+  if (cachedApp) return cachedApp;
+
   const app = await NestFactory.create(AppModule);
 
   // Security middleware
@@ -41,9 +45,27 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  // Port configuration for Railway
+  await app.init();
+  cachedApp = app;
+  return app;
+}
+
+// For serverless (Vercel)
+export default async function handler(req: any, res: any) {
+  const app = await createApp();
+  const server = app.getHttpAdapter().getInstance();
+  return server(req, res);
+}
+
+// For local development and traditional servers
+async function bootstrap() {
+  const app = await createApp();
   const port = process.env.PORT || 4000;
   await app.listen(port);
   console.log(`ESTRATO API running on port ${port}`);
 }
-bootstrap();
+
+// Only run bootstrap if not in serverless environment
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  bootstrap();
+}
