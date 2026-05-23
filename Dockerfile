@@ -1,5 +1,5 @@
-# Build stage
-FROM node:20-alpine AS builder
+# Single stage build for Railway
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
+# Install all dependencies (including devDependencies for build)
 RUN npm install --legacy-peer-deps
 
 # Generate Prisma client
@@ -18,28 +18,6 @@ COPY . .
 
 # Build the application
 RUN npm run build
-
-# Production stage
-FROM node:20-alpine
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install production dependencies (including Prisma for client generation)
-RUN npm install --legacy-peer-deps --production && \
-    npm install --legacy-peer-deps prisma @prisma/client
-
-# Copy Prisma schema
-COPY prisma ./prisma/
-
-# Copy built application from builder (copy everything including dist)
-COPY --from=builder /app/dist ./dist
-
-# Copy Prisma generated files
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Expose port
 EXPOSE 4000
