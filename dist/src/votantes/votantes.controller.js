@@ -12,49 +12,61 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.VapiController = void 0;
+exports.VotantesController = void 0;
 const common_1 = require("@nestjs/common");
-const vapi_service_1 = require("./vapi.service");
+const votantes_service_1 = require("./votantes.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const tenant_guard_1 = require("../common/guards/tenant.guard");
-let VapiController = class VapiController {
-    constructor(vapiService) {
-        this.vapiService = vapiService;
+let VotantesController = class VotantesController {
+    constructor(votantesService) {
+        this.votantesService = votantesService;
     }
-    getCampanas() {
-        return this.vapiService.getCampanas();
+    findAll(query) {
+        return this.votantesService.findAll(query);
     }
-    createCampana(data) {
-        return this.vapiService.createCampana(data);
+    findOne(id) {
+        return this.votantesService.findOne(id);
     }
-    getLlamadas(campanaId) {
-        return this.vapiService.getLlamadas(campanaId);
+    create(data) {
+        return this.votantesService.create(data);
+    }
+    update(id, data) {
+        return this.votantesService.update(id, data);
     }
 };
-exports.VapiController = VapiController;
+exports.VotantesController = VotantesController;
 __decorate([
-    (0, common_1.Get)('campanas'),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
-    __metadata("design:returntype", void 0)
-], VapiController.prototype, "getCampanas", null);
-__decorate([
-    (0, common_1.Post)('campanas'),
-    __param(0, (0, common_1.Body)()),
+    (0, common_1.Get)(),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
-], VapiController.prototype, "createCampana", null);
+], VotantesController.prototype, "findAll", null);
 __decorate([
-    (0, common_1.Get)('campanas/:id/llamadas'),
+    (0, common_1.Get)(':id'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
-], VapiController.prototype, "getLlamadas", null);
-exports.VapiController = VapiController = __decorate([
-    (0, common_1.Controller)('vapi'),
+], VotantesController.prototype, "findOne", null);
+__decorate([
+    (0, common_1.Post)(),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], VotantesController.prototype, "create", null);
+__decorate([
+    (0, common_1.Patch)(':id'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], VotantesController.prototype, "update", null);
+exports.VotantesController = VotantesController = __decorate([
+    (0, common_1.Controller)('votantes'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, tenant_guard_1.TenantGuard),
-    __metadata("design:paramtypes", [vapi_service_1.VapiService])
-], VapiController);
-//# sourceMappingURL=vapi.controller.js.map
+    __metadata("design:paramtypes", [votantes_service_1.VotantesService])
+], VotantesController);
+//# sourceMappingURL=votantes.controller.js.map

@@ -54,11 +54,15 @@ let AuthService = class AuthService {
         };
     }
     async getMe(userId) {
-        return this.prisma.usuario.findUnique({
+        const user = await this.prisma.usuario.findUnique({
             where: { id: userId },
             include: { tenant: true },
-            omit: {},
         });
+        if (user) {
+            const { ...result } = user;
+            return result;
+        }
+        return null;
     }
 };
 exports.AuthService = AuthService;

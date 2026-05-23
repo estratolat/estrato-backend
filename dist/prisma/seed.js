@@ -29,8 +29,10 @@ async function main() {
             where: { email: user.email },
             update: {},
             create: {
-                ...user,
-                tenant_id: tenant.id,
+                email: user.email,
+                nombre: user.nombre,
+                rol: user.rol,
+                tenant: { connect: { id: tenant.id } },
                 activo: true,
             },
         });
@@ -69,7 +71,7 @@ async function main() {
     console.log('✅ Resultados históricos creados');
     await prisma.avisoPrivacidad.create({
         data: {
-            tenant_id: tenant.id,
+            tenant: { connect: { id: tenant.id } },
             version: 1,
             contenido: 'Aviso de privacidad demo para cumplimiento LFPDPPP...',
             fecha_vigencia: new Date(),
@@ -86,7 +88,7 @@ async function main() {
         await prisma.votante.create({
             data: {
                 ...v,
-                tenant_id: tenant.id,
+                tenant: { connect: { id: tenant.id } },
                 activo: true,
             },
         });
@@ -94,7 +96,7 @@ async function main() {
     console.log('✅ Votantes de ejemplo creados');
     const evento = await prisma.evento.create({
         data: {
-            tenant_id: tenant.id,
+            tenant: { connect: { id: tenant.id } },
             nombre: 'Mitin de Inicio de Campaña',
             descripcion: 'Evento inaugural con el candidato',
             direccion: 'Plaza Principal, León Gto',

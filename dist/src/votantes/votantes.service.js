@@ -9,35 +9,37 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LideresService = void 0;
+exports.VotantesService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../common/services/prisma.service");
-let LideresService = class LideresService {
+let VotantesService = class VotantesService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async findAll() {
-        return this.prisma.lider.findMany();
+    async findAll(query) {
+        return this.prisma.votante.findMany({
+            where: { activo: true },
+            take: query.limit ? parseInt(query.limit) : 100,
+        });
     }
     async findOne(id) {
-        return this.prisma.lider.findUnique({
+        return this.prisma.votante.findUnique({
             where: { id },
-            include: { votante: true, lideresHijos: true },
         });
     }
     async create(data) {
-        return this.prisma.lider.create({ data });
+        return this.prisma.votante.create({ data });
     }
-    async updateScore(id, score) {
-        return this.prisma.lider.update({
+    async update(id, data) {
+        return this.prisma.votante.update({
             where: { id },
-            data: { score },
+            data,
         });
     }
 };
-exports.LideresService = LideresService;
-exports.LideresService = LideresService = __decorate([
+exports.VotantesService = VotantesService;
+exports.VotantesService = VotantesService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService])
-], LideresService);
-//# sourceMappingURL=lideres.service.js.map
+], VotantesService);
+//# sourceMappingURL=votantes.service.js.map

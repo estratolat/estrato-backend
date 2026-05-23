@@ -2,7 +2,7 @@ import { TenantsService } from './tenants.service';
 export declare class TenantsController {
     private readonly tenantsService;
     constructor(tenantsService: TenantsService);
-    getBySlug(slug: string): Promise<Tenant>;
+    getBySlug(slug: string): Promise<any>;
     getStats(slug: string): Promise<{
         totalVotantes: any;
         totalLideres: any;
@@ -27,6 +27,6 @@ export declare class TenantsController {
         nombre_candidato: string;
         cargo_busca?: string;
         slogan?: string;
-    }): Promise<Tenant>;
-    toggleVeda(id: string, veda_activa: boolean): Promise<Tenant>;
+    }): Promise<any>;
+    toggleVeda(id: string, veda_activa: boolean): Promise<any>;
 }
