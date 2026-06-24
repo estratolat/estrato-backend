@@ -31,7 +31,7 @@ export class TenantGuard implements CanActivate {
 
     // Verificar que el usuario pertenece al tenant
     const usuario = await this.prisma.usuario.findFirst({
-      where: { id: user.id, tenant_id: tenantId, activo: true },
+      where: { id: user.userId, tenant_id: tenantId, activo: true },
     });
 
     if (!usuario) {

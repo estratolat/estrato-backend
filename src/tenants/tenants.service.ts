@@ -41,6 +41,41 @@ export class TenantsService {
     });
   }
 
+  async getLandingData(slug: string) {
+    const tenant = await this.getOrThrow(slug);
+    const stats = await this.getStats(tenant.id);
+    const eventos = await this.prisma.evento.findMany({
+      where: {
+        tenant_id: tenant.id,
+        status: { not: 'cancelado' },
+        fecha_inicio: { gte: new Date() },
+      },
+      orderBy: { fecha_inicio: 'asc' },
+      take: 5,
+    });
+
+    return {
+      tenant: {
+        slug: tenant.slug,
+        nombre_candidato: tenant.nombre_candidato,
+        cargo_busca: tenant.cargo_busca,
+        slogan: tenant.slogan,
+      },
+      stats: {
+        totalSimpatizantes: stats.totalVotantes,
+        totalEventos: stats.totalEventos,
+      },
+      eventos: eventos.map((e) => ({
+        id: e.id,
+        nombre: e.nombre,
+        descripcion: e.descripcion,
+        direccion: e.direccion,
+        fecha: e.fecha_inicio,
+        coordenadas: e.coordenadas,
+      })),
+    };
+  }
+
   async update(id: string, data: any) {
     return this.prisma.tenant.update({
       where: { id },

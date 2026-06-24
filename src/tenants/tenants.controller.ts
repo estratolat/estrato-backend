@@ -9,13 +9,16 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
+import { VotantesService } from '../votantes/votantes.service';
 import { TenantGuard } from '../common/guards/tenant.guard';
-import { TenantId, Tenant } from '../common/decorators/tenant.decorator';
 
 @ApiTags('Tenants')
 @Controller('tenants')
 export class TenantsController {
-  constructor(private readonly tenantsService: TenantsService) {}
+  constructor(
+    private readonly tenantsService: TenantsService,
+    private readonly votantesService: VotantesService,
+  ) {}
 
   @Get(':slug')
   @ApiOperation({ summary: 'Obtener tenant por slug (público)' })
@@ -33,21 +36,8 @@ export class TenantsController {
   @Get(':slug/landing')
   @ApiOperation({ summary: 'Datos para landing pública' })
   async getLandingData(@Param('slug') slug: string) {
-    const tenant = await this.tenantsService.getOrThrow(slug);
-    const stats = await this.tenantsService.getStats(tenant.id);
-
-    return {
-      tenant: {
-        slug: tenant.slug,
-        nombre_candidato: tenant.nombre_candidato,
-        cargo_busca: tenant.cargo_busca,
-        slogan: tenant.slogan,
-      },
-      stats: {
-        totalSimpatizantes: stats.totalVotantes,
-        totalEventos: stats.totalEventos,
-      },
-    };
+    const landing = await this.tenantsService.getLandingData(slug);
+    return landing;
   }
 
   @Post()
@@ -59,6 +49,28 @@ export class TenantsController {
     slogan?: string;
   }) {
     return this.tenantsService.create(data);
+  }
+
+  @Post(':slug/votantes')
+  @ApiOperation({ summary: 'Registrar votante público desde landing' })
+  async registrarVotantePublico(
+    @Param('slug') slug: string,
+    @Body() data: {
+      nombre: string;
+      telefono?: string;
+      colonia?: string;
+      seccion_electoral?: string;
+      nivel_apoyo?: number;
+      origen_qr?: string;
+    },
+  ) {
+    const tenant = await this.tenantsService.getOrThrow(slug);
+    return this.votantesService.create({
+      ...data,
+      tenant_id: tenant.id,
+      activo: true,
+      nivel_apoyo: data.nivel_apoyo ?? 3,
+    });
   }
 
   @Patch(':id/veda')

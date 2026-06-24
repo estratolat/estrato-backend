@@ -10,6 +10,7 @@ exports.CrmModule = void 0;
 const common_1 = require("@nestjs/common");
 const crm_controller_1 = require("./crm.controller");
 const crm_service_1 = require("./crm.service");
+const messaging_service_1 = require("./messaging.service");
 const prisma_service_1 = require("../common/services/prisma.service");
 let CrmModule = class CrmModule {
 };
@@ -17,8 +18,8 @@ exports.CrmModule = CrmModule;
 exports.CrmModule = CrmModule = __decorate([
     (0, common_1.Module)({
         controllers: [crm_controller_1.CrmController],
-        providers: [crm_service_1.CrmService, prisma_service_1.PrismaService],
-        exports: [crm_service_1.CrmService],
+        providers: [crm_service_1.CrmService, messaging_service_1.MessagingService, prisma_service_1.PrismaService],
+        exports: [crm_service_1.CrmService, messaging_service_1.MessagingService],
     })
 ], CrmModule);
 //# sourceMappingURL=crm.module.js.map

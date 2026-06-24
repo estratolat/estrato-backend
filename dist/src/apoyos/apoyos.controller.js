@@ -21,26 +21,28 @@ let ApoyosController = class ApoyosController {
     constructor(apoyosService) {
         this.apoyosService = apoyosService;
     }
-    findAll(query) {
-        return this.apoyosService.findAll(query);
+    findAll(query, req) {
+        return this.apoyosService.findAll(query, req.tenant.id);
     }
-    create(data) {
-        return this.apoyosService.create(data);
+    create(data, req) {
+        return this.apoyosService.create(data, req.tenant.id, req.usuario?.id);
     }
 };
 exports.ApoyosController = ApoyosController;
 __decorate([
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApoyosController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], ApoyosController.prototype, "create", null);
 exports.ApoyosController = ApoyosController = __decorate([

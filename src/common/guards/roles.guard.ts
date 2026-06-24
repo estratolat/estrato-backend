@@ -1,9 +1,8 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { UserRole } from '@prisma/client';
 
 export const ROLES_KEY = 'roles';
-
-export type UserRole = 'owner' | 'candidato' | 'coord_general' | 'coord_zona' | 'brigadista' | 'cm';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -15,17 +14,16 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (!requiredRoles) {
+    if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
 
     const { user } = context.switchToHttp().getRequest();
-
-    if (!user) {
+    if (!user || !user.rol) {
       throw new ForbiddenException('Usuario no autenticado');
     }
 
-    if (!requiredRoles.includes(user.rol)) {
+    if (!requiredRoles.includes(user.rol as UserRole)) {
       throw new ForbiddenException('No tienes permisos para realizar esta acción');
     }
 
@@ -33,13 +31,4 @@ export class RolesGuard implements CanActivate {
   }
 }
 
-// Decorador para roles
-export const Roles = (...roles: UserRole[]) => {
-  return (target: any, key?: string, descriptor?: PropertyDescriptor) => {
-    if (descriptor) {
-      Reflect.defineMetadata(ROLES_KEY, roles, descriptor.value);
-    } else {
-      Reflect.defineMetadata(ROLES_KEY, roles, target);
-    }
-  };
-};
+export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);

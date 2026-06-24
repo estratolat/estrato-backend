@@ -1,0 +1,11 @@
+export declare class GisParserService {
+    detectarTipo(nombre: string): string;
+    parse(archivo: Express.Multer.File, tipoArchivo?: string): Promise<any>;
+    private parseKml;
+    private parseGeoJson;
+    private parseShapefile;
+    private parseGpx;
+    private normalizarGeoJSON;
+    private limpiarFeatures;
+    private limpiarFeature;
+}

@@ -11,8 +11,5 @@
       "src": "/(.*)",
       "dest": "src/main.ts"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }

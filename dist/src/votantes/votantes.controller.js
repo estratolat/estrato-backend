@@ -21,14 +21,32 @@ let VotantesController = class VotantesController {
     constructor(votantesService) {
         this.votantesService = votantesService;
     }
-    findAll(query) {
-        return this.votantesService.findAll(query);
+    async findAll(query, req) {
+        try {
+            return await this.votantesService.findAll(query, req.tenant.id);
+        }
+        catch (err) {
+            console.error('[VotantesController.findAll] ERROR:', err?.message, err?.stack);
+            throw err;
+        }
+    }
+    async getStats(req) {
+        try {
+            return await this.votantesService.getStats(req.tenant.id);
+        }
+        catch (err) {
+            console.error('[VotantesController.getStats] ERROR:', err?.message, err?.stack);
+            throw err;
+        }
     }
     findOne(id) {
         return this.votantesService.findOne(id);
     }
-    create(data) {
-        return this.votantesService.create(data);
+    create(data, req) {
+        return this.votantesService.create(data, req.tenant.id);
+    }
+    importar(body, req) {
+        return this.votantesService.importar(body.votantes || [], req.tenant.id);
     }
     update(id, data) {
         return this.votantesService.update(id, data);
@@ -38,10 +56,18 @@ exports.VotantesController = VotantesController;
 __decorate([
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], VotantesController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Get)('stats'),
+    __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", void 0)
-], VotantesController.prototype, "findAll", null);
+    __metadata("design:returntype", Promise)
+], VotantesController.prototype, "getStats", null);
 __decorate([
     (0, common_1.Get)(':id'),
     __param(0, (0, common_1.Param)('id')),
@@ -52,10 +78,19 @@ __decorate([
 __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], VotantesController.prototype, "create", null);
+__decorate([
+    (0, common_1.Post)('importar'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], VotantesController.prototype, "importar", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     __param(0, (0, common_1.Param)('id')),

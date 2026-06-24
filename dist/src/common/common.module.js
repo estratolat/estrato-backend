@@ -9,14 +9,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CommonModule = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("./services/prisma.service");
+const anthropic_service_1 = require("./services/anthropic.service");
+const transcripcion_service_1 = require("./services/transcripcion.service");
 let CommonModule = class CommonModule {
 };
 exports.CommonModule = CommonModule;
 exports.CommonModule = CommonModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
-        providers: [prisma_service_1.PrismaService],
-        exports: [prisma_service_1.PrismaService],
+        providers: [prisma_service_1.PrismaService, anthropic_service_1.AnthropicService, transcripcion_service_1.TranscripcionService],
+        exports: [prisma_service_1.PrismaService, anthropic_service_1.AnthropicService, transcripcion_service_1.TranscripcionService],
     })
 ], CommonModule);
 //# sourceMappingURL=common.module.js.map

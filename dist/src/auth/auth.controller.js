@@ -22,11 +22,27 @@ let AuthController = class AuthController {
         this.authService = authService;
     }
     async login(loginDto) {
-        const user = await this.authService.validateUser(loginDto.email, loginDto.password);
-        return this.authService.login(user);
+        try {
+            const user = await this.authService.validateUser(loginDto.email, loginDto.password);
+            return this.authService.login(user);
+        }
+        catch (error) {
+            console.error('[LOGIN FAILED]', loginDto.email, error?.message || error);
+            throw error;
+        }
+    }
+    async loginBrigada(loginDto) {
+        try {
+            const user = await this.authService.validateBrigadaUser(loginDto.telefono, loginDto.pin);
+            return this.authService.login(user);
+        }
+        catch (error) {
+            console.error('[LOGIN BRIGADA FAILED]', loginDto.telefono, error?.message || error);
+            throw error;
+        }
     }
     async getMe(req) {
-        return this.authService.getMe(req.user.sub);
+        return this.authService.getMe(req.user.userId);
     }
 };
 exports.AuthController = AuthController;
@@ -38,6 +54,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
+__decorate([
+    (0, common_1.Post)('brigada/login'),
+    (0, swagger_1.ApiOperation)({ summary: 'Login exclusivo para brigadas con teléfono + PIN' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "loginBrigada", null);
 __decorate([
     (0, common_1.Get)('me'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

@@ -28,6 +28,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             rol: payload.rol,
             tenant_id: payload.tenant_id,
             tenant_slug: payload.tenant_slug,
+            permisos: Array.isArray(payload.permisos) ? payload.permisos : [],
         };
     }
 };

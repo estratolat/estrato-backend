@@ -33,7 +33,7 @@ let TenantGuard = class TenantGuard {
             throw new common_1.ForbiddenException('Tenant no encontrado o inactivo');
         }
         const usuario = await this.prisma.usuario.findFirst({
-            where: { id: user.id, tenant_id: tenantId, activo: true },
+            where: { id: user.userId, tenant_id: tenantId, activo: true },
         });
         if (!usuario) {
             throw new common_1.ForbiddenException('Usuario no tiene acceso a este tenant');

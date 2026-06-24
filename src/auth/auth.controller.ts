@@ -11,8 +11,25 @@ export class AuthController {
   @Post('login')
   @ApiOperation({ summary: 'Login con email/password' })
   async login(@Body() loginDto: { email: string; password: string }) {
-    const user = await this.authService.validateUser(loginDto.email, loginDto.password);
-    return this.authService.login(user);
+    try {
+      const user = await this.authService.validateUser(loginDto.email, loginDto.password);
+      return this.authService.login(user);
+    } catch (error: any) {
+      console.error('[LOGIN FAILED]', loginDto.email, error?.message || error);
+      throw error;
+    }
+  }
+
+  @Post('brigada/login')
+  @ApiOperation({ summary: 'Login exclusivo para brigadas con teléfono + PIN' })
+  async loginBrigada(@Body() loginDto: { telefono: string; pin: string }) {
+    try {
+      const user = await this.authService.validateBrigadaUser(loginDto.telefono, loginDto.pin);
+      return this.authService.login(user);
+    } catch (error: any) {
+      console.error('[LOGIN BRIGADA FAILED]', loginDto.telefono, error?.message || error);
+      throw error;
+    }
   }
 
   @Get('me')
@@ -20,6 +37,6 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener usuario actual' })
   async getMe(@Req() req) {
-    return this.authService.getMe(req.user.sub);
+    return this.authService.getMe(req.user.userId);
   }
 }

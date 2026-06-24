@@ -21,59 +21,77 @@ let EventosController = class EventosController {
     constructor(eventosService) {
         this.eventosService = eventosService;
     }
-    findAll() {
-        return this.eventosService.findAll();
+    findAll(query, req) {
+        return this.eventosService.findAll(query, req.tenant.id);
     }
-    findOne(id) {
-        return this.eventosService.findOne(id);
+    findOne(id, req) {
+        return this.eventosService.findOne(id, req.tenant.id);
     }
-    create(data) {
-        return this.eventosService.create(data);
+    create(data, req) {
+        return this.eventosService.create(data, req.tenant.id, req.usuario?.id);
     }
-    update(id, data) {
-        return this.eventosService.update(id, data);
+    update(id, data, req) {
+        return this.eventosService.update(id, data, req.tenant.id);
     }
-    registrarAsistencia(eventoId, data) {
-        return this.eventosService.registrarAsistencia(eventoId, data);
+    registrarAsistencia(eventoId, data, req) {
+        return this.eventosService.registrarAsistencia(eventoId, data, req.tenant.id);
+    }
+    eliminarAsistencia(eventoId, votanteId, req) {
+        return this.eventosService.eliminarAsistencia(eventoId, votanteId, req.tenant.id);
     }
 };
 exports.EventosController = EventosController;
 __decorate([
     (0, common_1.Get)(),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], EventosController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)(':id'),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], EventosController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], EventosController.prototype, "create", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], EventosController.prototype, "update", null);
 __decorate([
     (0, common_1.Post)(':id/asistencias'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], EventosController.prototype, "registrarAsistencia", null);
+__decorate([
+    (0, common_1.Delete)(':id/asistencias/:votanteId'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Param)('votanteId')),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", void 0)
+], EventosController.prototype, "eliminarAsistencia", null);
 exports.EventosController = EventosController = __decorate([
     (0, common_1.Controller)('eventos'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, tenant_guard_1.TenantGuard),

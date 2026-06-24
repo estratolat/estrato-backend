@@ -13,33 +13,68 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.prisma.usuario.findUnique({
       where: { email },
-      include: { tenant: true },
+      include: { tenant: true, zona: { select: { id: true, nombre: true } } },
     });
 
     if (!user || !user.activo) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // En producción, usar bcrypt.compare
-    // const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    // For demo:
-    const isPasswordValid = password === 'demo123';
+    let isPasswordValid = false;
+
+    if (user.password_hash) {
+      isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    } else {
+      // Fallback para datos antiguos sin hash
+      isPasswordValid = password === 'demo123';
+    }
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    const { ...result } = user;
+    const { password_hash, ...result } = user;
     return result;
   }
 
-  async login(user: any) {
+  async validateBrigadaUser(telefono: string, pin: string): Promise<any> {
+    const digits = String(telefono || '').replace(/\D/g, '');
+    const user = await this.prisma.usuario.findFirst({
+      where: {
+        telefono: { contains: digits, mode: 'insensitive' },
+        activo: true,
+        rol: { in: ['brigadista', 'coord_zona', 'coord_general'] },
+      },
+      include: { tenant: true, zona: { select: { id: true, nombre: true } } },
+    });
+
+    if (!user || !user.activo) {
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    // Comparación directa del PIN; en producción hash con bcrypt
+    const isPinValid = String(user.pin || '').trim() === String(pin || '').trim();
+
+    if (!isPinValid) {
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    const { password_hash, ...result } = user;
+    return result;
+  }
+
+  login(user: any) {
+    const permisos = Array.isArray(user.permisos)
+      ? user.permisos
+      : this.permisosPorRol(user.rol);
+
     const payload = {
       sub: user.id,
       email: user.email,
       rol: user.rol,
       tenant_id: user.tenant_id,
       tenant_slug: user.tenant?.slug,
+      permisos,
     };
 
     return {
@@ -51,6 +86,8 @@ export class AuthService {
         rol: user.rol,
         tenant_id: user.tenant_id,
         tenant_slug: user.tenant?.slug,
+        zona_id: user.zona_id,
+        permisos,
       },
     };
   }
@@ -58,13 +95,65 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.prisma.usuario.findUnique({
       where: { id: userId },
-      include: { tenant: true },
+      include: { tenant: true, zona: { select: { id: true, nombre: true } } },
     });
     if (user) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { /*password_hash,*/ ...result } = user;
+      const { password_hash, ...result } = user;
       return result;
     }
     return null;
+  }
+
+  private permisosPorRol(rol: string): string[] {
+    const defaults: Record<string, string[]> = {
+      owner: [
+        'dashboard',
+        'votantes',
+        'crm',
+        'eventos',
+        'mapa',
+        'boletines',
+        'llamadas',
+        'ine',
+        'candidato',
+        'usuarios',
+        'app_brigada',
+      ],
+      candidato: [
+        'dashboard',
+        'votantes',
+        'crm',
+        'eventos',
+        'mapa',
+        'boletines',
+        'llamadas',
+        'ine',
+        'candidato',
+        'usuarios',
+        'app_brigada',
+      ],
+      coord_general: [
+        'dashboard',
+        'votantes',
+        'crm',
+        'eventos',
+        'mapa',
+        'boletines',
+        'llamadas',
+        'app_brigada',
+      ],
+      coord_zona: [
+        'dashboard',
+        'votantes',
+        'crm',
+        'eventos',
+        'mapa',
+        'app_brigada',
+      ],
+      brigadista: ['app_brigada'],
+      cm: ['dashboard', 'crm', 'boletines', 'candidato'],
+    };
+    return defaults[rol] || [];
   }
 }

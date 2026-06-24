@@ -22,23 +22,45 @@ async function main() {
 
   console.log('✅ Tenant creado:', tenant.slug);
 
+  const permisosPorRol: Record<UserRole, string[]> = {
+    [UserRole.owner]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'ine', 'usuarios', 'app_brigada'],
+    [UserRole.candidato]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'ine', 'usuarios', 'app_brigada'],
+    [UserRole.coord_general]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'app_brigada'],
+    [UserRole.coord_zona]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'app_brigada'],
+    [UserRole.brigadista]: ['app_brigada'],
+    [UserRole.cm]: ['dashboard', 'crm', 'boletines'],
+  };
+
+  const passwordHash = await bcrypt.hash('demo123', 10);
+
   // 2. Crear usuarios de prueba
   const users = [
     { email: 'owner@demo.com', nombre: 'Administrador', rol: UserRole.owner },
     { email: 'candidato@demo.com', nombre: 'Candidato Demo', rol: UserRole.candidato },
     { email: 'coord@demo.com', nombre: 'Coordinador General', rol: UserRole.coord_general },
-    { email: 'brigadista@demo.com', nombre: 'Brigadista 1', rol: UserRole.brigadista },
+    { email: 'brigadista@demo.com', nombre: 'Brigadista 1', rol: UserRole.brigadista, telefono: '+521234567893', pin: '1234' },
     { email: 'cm@demo.com', nombre: 'Community Manager', rol: UserRole.cm },
   ];
 
   for (const user of users) {
     await prisma.usuario.upsert({
       where: { email: user.email },
-      update: {},
+      update: {
+        nombre: user.nombre,
+        rol: user.rol,
+        telefono: (user as any).telefono || null,
+        pin: (user as any).pin || null,
+        password_hash: passwordHash,
+        permisos: permisosPorRol[user.rol],
+      },
       create: {
         email: user.email,
         nombre: user.nombre,
         rol: user.rol,
+        telefono: (user as any).telefono || null,
+        pin: (user as any).pin || null,
+        password_hash: passwordHash,
+        permisos: permisosPorRol[user.rol],
         tenant: { connect: { id: tenant.id } },
         activo: true,
       },
@@ -84,8 +106,10 @@ async function main() {
   console.log('✅ Resultados históricos creados');
 
   // 5. Crear aviso de privacidad
-  await prisma.avisoPrivacidad.create({
-    data: {
+  await prisma.avisoPrivacidad.upsert({
+    where: { tenant_id_version: { tenant_id: tenant.id, version: 1 } },
+    update: {},
+    create: {
       tenant: { connect: { id: tenant.id } },
       version: 1,
       contenido: 'Aviso de privacidad demo para cumplimiento LFPDPPP...',
@@ -134,6 +158,7 @@ async function main() {
   console.log('   candidato@demo.com (Candidato)');
   console.log('   coord@demo.com (Coordinador)');
   console.log('   brigadista@demo.com (Brigadista)');
+  console.log('   Brigada app: teléfono +521234567893 / PIN 1234');
   console.log('   cm@demo.com (Community Manager)');
 }
 

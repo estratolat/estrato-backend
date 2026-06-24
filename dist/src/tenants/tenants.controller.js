@@ -16,10 +16,12 @@ exports.TenantsController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const tenants_service_1 = require("./tenants.service");
+const votantes_service_1 = require("../votantes/votantes.service");
 const tenant_guard_1 = require("../common/guards/tenant.guard");
 let TenantsController = class TenantsController {
-    constructor(tenantsService) {
+    constructor(tenantsService, votantesService) {
         this.tenantsService = tenantsService;
+        this.votantesService = votantesService;
     }
     async getBySlug(slug) {
         return this.tenantsService.getOrThrow(slug);
@@ -29,23 +31,20 @@ let TenantsController = class TenantsController {
         return this.tenantsService.getStats(tenant.id);
     }
     async getLandingData(slug) {
-        const tenant = await this.tenantsService.getOrThrow(slug);
-        const stats = await this.tenantsService.getStats(tenant.id);
-        return {
-            tenant: {
-                slug: tenant.slug,
-                nombre_candidato: tenant.nombre_candidato,
-                cargo_busca: tenant.cargo_busca,
-                slogan: tenant.slogan,
-            },
-            stats: {
-                totalSimpatizantes: stats.totalVotantes,
-                totalEventos: stats.totalEventos,
-            },
-        };
+        const landing = await this.tenantsService.getLandingData(slug);
+        return landing;
     }
     async create(data) {
         return this.tenantsService.create(data);
+    }
+    async registrarVotantePublico(slug, data) {
+        const tenant = await this.tenantsService.getOrThrow(slug);
+        return this.votantesService.create({
+            ...data,
+            tenant_id: tenant.id,
+            activo: true,
+            nivel_apoyo: data.nivel_apoyo ?? 3,
+        });
     }
     async toggleVeda(id, veda_activa) {
         return this.tenantsService.toggleVeda(id, veda_activa);
@@ -85,6 +84,15 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], TenantsController.prototype, "create", null);
 __decorate([
+    (0, common_1.Post)(':slug/votantes'),
+    (0, swagger_1.ApiOperation)({ summary: 'Registrar votante público desde landing' }),
+    __param(0, (0, common_1.Param)('slug')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TenantsController.prototype, "registrarVotantePublico", null);
+__decorate([
     (0, common_1.Patch)(':id/veda'),
     (0, common_1.UseGuards)(tenant_guard_1.TenantGuard),
     (0, swagger_1.ApiBearerAuth)(),
@@ -98,6 +106,7 @@ __decorate([
 exports.TenantsController = TenantsController = __decorate([
     (0, swagger_1.ApiTags)('Tenants'),
     (0, common_1.Controller)('tenants'),
-    __metadata("design:paramtypes", [tenants_service_1.TenantsService])
+    __metadata("design:paramtypes", [tenants_service_1.TenantsService,
+        votantes_service_1.VotantesService])
 ], TenantsController);
 //# sourceMappingURL=tenants.controller.js.map

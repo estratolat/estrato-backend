@@ -13,6 +13,22 @@ let JwtAuthGuard = class JwtAuthGuard extends (0, passport_1.AuthGuard)('jwt') {
     canActivate(context) {
         return super.canActivate(context);
     }
+    handleRequest(err, user, info, context, status) {
+        const result = super.handleRequest(err, user, info, context, status);
+        const req = context.switchToHttp().getRequest();
+        req.usuario = result
+            ? {
+                id: result.userId,
+                userId: result.userId,
+                email: result.email,
+                rol: result.rol,
+                tenant_id: result.tenant_id,
+                tenant_slug: result.tenant_slug,
+                permisos: result.permisos || [],
+            }
+            : null;
+        return result;
+    }
 };
 exports.JwtAuthGuard = JwtAuthGuard;
 exports.JwtAuthGuard = JwtAuthGuard = __decorate([

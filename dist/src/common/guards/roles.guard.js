@@ -22,11 +22,11 @@ let RolesGuard = class RolesGuard {
             context.getHandler(),
             context.getClass(),
         ]);
-        if (!requiredRoles) {
+        if (!requiredRoles || requiredRoles.length === 0) {
             return true;
         }
         const { user } = context.switchToHttp().getRequest();
-        if (!user) {
+        if (!user || !user.rol) {
             throw new common_1.ForbiddenException('Usuario no autenticado');
         }
         if (!requiredRoles.includes(user.rol)) {
@@ -40,15 +40,6 @@ exports.RolesGuard = RolesGuard = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [core_1.Reflector])
 ], RolesGuard);
-const Roles = (...roles) => {
-    return (target, key, descriptor) => {
-        if (descriptor) {
-            Reflect.defineMetadata(exports.ROLES_KEY, roles, descriptor.value);
-        }
-        else {
-            Reflect.defineMetadata(exports.ROLES_KEY, roles, target);
-        }
-    };
-};
+const Roles = (...roles) => (0, common_1.SetMetadata)(exports.ROLES_KEY, roles);
 exports.Roles = Roles;
 //# sourceMappingURL=roles.guard.js.map
