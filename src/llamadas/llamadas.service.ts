@@ -216,7 +216,7 @@ export class LlamadasService {
       where: {
         OR: [
           { metadata: { path: ['proveedor_call_id'], equals: proveedorCallId } },
-          { metadata: { path: ['vapi_call_id'], equals: proveedorCallId } },
+          { metadata: { path: ['external_call_id'], equals: proveedorCallId } },
           { telefono },
         ],
       },
