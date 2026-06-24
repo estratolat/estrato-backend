@@ -9,28 +9,13 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.VapiService = void 0;
-const common_1 = require("@nestjs/common");
-const prisma_service_1 = require("../common/services/prisma.service");
-let VapiService = class VapiService {
-    constructor(prisma) {
-        this.prisma = prisma;
-    }
-    async getCampanas() {
-        return this.prisma.campanaVapi.findMany();
-    }
-    async createCampana(data) {
-        return this.prisma.campanaVapi.create({ data });
-    }
-    async getLlamadas(campanaId) {
-        return this.prisma.llamadaVapi.findMany({
-            where: { campana_id: campanaId },
-        });
-    }
-};
-exports.VapiService = VapiService;
-exports.VapiService = VapiService = __decorate([
-    (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
-], VapiService);
-//# sourceMappingURL=vapi.service.js.map
+exports.IniciarLlamadaDto = void 0;
+const class_validator_1 = require("class-validator");
+class IniciarLlamadaDto {
+}
+exports.IniciarLlamadaDto = IniciarLlamadaDto;
+__decorate([
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], IniciarLlamadaDto.prototype, "votante_id", void 0);
+//# sourceMappingURL=iniciar-llamada.dto.js.map

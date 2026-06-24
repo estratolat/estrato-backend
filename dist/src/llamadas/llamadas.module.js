@@ -6,19 +6,19 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.VapiModule = void 0;
+exports.LlamadasModule = void 0;
 const common_1 = require("@nestjs/common");
-const vapi_controller_1 = require("./vapi.controller");
-const vapi_service_1 = require("./vapi.service");
+const llamadas_controller_1 = require("./llamadas.controller");
+const llamadas_service_1 = require("./llamadas.service");
 const prisma_service_1 = require("../common/services/prisma.service");
-let VapiModule = class VapiModule {
+let LlamadasModule = class LlamadasModule {
 };
-exports.VapiModule = VapiModule;
-exports.VapiModule = VapiModule = __decorate([
+exports.LlamadasModule = LlamadasModule;
+exports.LlamadasModule = LlamadasModule = __decorate([
     (0, common_1.Module)({
-        controllers: [vapi_controller_1.VapiController],
-        providers: [vapi_service_1.VapiService, prisma_service_1.PrismaService],
-        exports: [vapi_service_1.VapiService],
+        controllers: [llamadas_controller_1.LlamadasController],
+        providers: [llamadas_service_1.LlamadasService, prisma_service_1.PrismaService],
+        exports: [llamadas_service_1.LlamadasService],
     })
-], VapiModule);
-//# sourceMappingURL=vapi.module.js.map
+], LlamadasModule);
+//# sourceMappingURL=llamadas.module.js.map
