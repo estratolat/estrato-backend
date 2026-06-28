@@ -5,6 +5,7 @@ import { GisParserService } from './gis-parser.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
+import { ImportarSeccionesExcelDto } from './dto/importar-secciones-excel.dto';
 import { BuscarGlobalDto } from './dto/buscar-global.dto';
 import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
 
@@ -99,6 +100,36 @@ export class MapasController {
         municipio_id: body.municipio_id != null ? Number(body.municipio_id) : undefined,
         municipio: body.municipio,
         anio: body.anio ? Number(body.anio) : undefined,
+      },
+    );
+  }
+
+  // Importar datos de campaña por sección desde Excel
+  @Post('secciones/importar-excel')
+  @UseInterceptors(FileInterceptor('archivo', {
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+    fileFilter: (req, file, cb) => {
+      const allowed = ['.xlsx', '.xls', '.csv'];
+      const ext = file.originalname.toLowerCase();
+      const valid = allowed.some(a => ext.endsWith(a));
+      cb(valid ? null : new BadRequestException('Solo se permiten archivos Excel (.xlsx, .xls) o CSV'), valid);
+    },
+  }))
+  async importarSeccionesExcel(
+    @UploadedFile() archivo: Express.Multer.File,
+    @Body() body: ImportarSeccionesExcelDto,
+    @Req() req: any,
+  ) {
+    if (!archivo) {
+      throw new BadRequestException('No se recibió archivo');
+    }
+
+    return this.mapasService.importarSeccionesExcel(
+      req.tenant.id,
+      archivo.buffer,
+      {
+        estado_id: body.estado_id ? Number(body.estado_id) : undefined,
+        estado: body.estado,
       },
     );
   }

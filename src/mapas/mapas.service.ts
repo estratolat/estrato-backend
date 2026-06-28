@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import * as XLSX from 'xlsx';
 import { PrismaService } from '../common/services/prisma.service';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { InegiService, TipoCapaInegi } from '../inegi/inegi.service';
@@ -246,6 +247,507 @@ export class MapasService {
     return { capa, total_secciones: collectionFeatures.length };
   }
 
+  // ======================
+  // IMPORTAR EXCEL DE SECCIONES CON DATOS DE CAMPAÑA
+  // ======================
+  async importarSeccionesExcel(
+    tenantId: string,
+    buffer: Buffer,
+    opts: { estado_id?: number; estado?: string },
+  ) {
+    const rows = this.leerExcel(buffer);
+    if (rows.length === 0) {
+      throw new BadRequestException('El archivo Excel no contiene filas de datos');
+    }
+
+    // Determinar estado_id global (body o columna del Excel)
+    let estadoIdGlobal = opts.estado_id;
+    if (!estadoIdGlobal) {
+      for (const r of rows.slice(0, 100)) {
+        const id = this.parsearEntero(
+          this.extraerCampo(r, ['estado_id', 'cve_ent', 'id_estado', 'clave_estado']),
+          undefined as any,
+        );
+        if (id) {
+          estadoIdGlobal = id;
+          break;
+        }
+      }
+    }
+    if (!estadoIdGlobal) {
+      throw new BadRequestException(
+        'No se pudo determinar el estado_id. Inclúyelo en el Excel (columna estado_id) o envíalo como parámetro.',
+      );
+    }
+
+    const estadoGlobal =
+      opts.estado ||
+      this.extraerCampo(rows[0], ['estado', 'nom_ent', 'nombre_estado']) ||
+      'Sin estado';
+
+    const filasNormalizadas = rows
+      .map((r) => this.normalizarFilaExcel(r, estadoIdGlobal, estadoGlobal))
+      .filter((f) => !!f.seccion);
+
+    if (filasNormalizadas.length === 0) {
+      throw new BadRequestException('No se encontraron filas con número de sección válido');
+    }
+
+    // Resolver municipio_id por nombre si no viene en el Excel
+    const municipiosPendientes = new Set<string>();
+    filasNormalizadas.forEach((f) => {
+      if (!f.municipio_id && f.municipio) {
+        municipiosPendientes.add(f.municipio);
+      }
+    });
+
+    const municipioMap = new Map<string, number>();
+    if (municipiosPendientes.size > 0) {
+      const munRows = await this.prisma.seccionINE.findMany({
+        where: {
+          tenant_id: tenantId,
+          estado_id: estadoIdGlobal,
+          municipio: { in: Array.from(municipiosPendientes), mode: 'insensitive' },
+        },
+        distinct: ['municipio_id', 'municipio'],
+        select: { municipio_id: true, municipio: true },
+      });
+      munRows.forEach((m) => {
+        if (m.municipio != null) {
+          const key = this.normalizarTexto(m.municipio);
+          municipioMap.set(key, m.municipio_id);
+        }
+      });
+    }
+
+    const validas = filasNormalizadas.filter((f) => {
+      if (!f.municipio_id && f.municipio) {
+        f.municipio_id = municipioMap.get(this.normalizarTexto(f.municipio));
+      }
+      return !!f.municipio_id;
+    });
+
+    const omitidas = filasNormalizadas.length - validas.length;
+
+    // Obtener IDs de secciones existentes para actualizarlas
+    const seccionesSet = new Set(validas.map((f) => f.seccion));
+    const existentes = await this.prisma.seccionINE.findMany({
+      where: {
+        tenant_id: tenantId,
+        estado_id: estadoIdGlobal,
+        seccion: { in: Array.from(seccionesSet) },
+      },
+      select: { id: true, seccion: true, municipio_id: true, estado_id: true, municipio: true },
+    });
+
+    const existentesMap = new Map(
+      existentes.map((s) => [`${s.estado_id}|${s.municipio_id}|${s.seccion}`, s]),
+    );
+
+    const actualizables: Array<{ id: string; fila: any }> = [];
+    const nuevas: any[] = [];
+
+    validas.forEach((f) => {
+      const key = `${estadoIdGlobal}|${f.municipio_id}|${f.seccion}`;
+      const existente = existentesMap.get(key);
+      if (existente) {
+        actualizables.push({ id: existente.id, fila: f });
+      } else {
+        nuevas.push(f);
+      }
+    });
+
+    // 1) Actualizar existentes por ID
+    if (actualizables.length > 0) {
+      await this.bulkUpdateSeccionesINE(tenantId, actualizables, estadoGlobal);
+    }
+
+    // 2) Crear nuevas (sin geometría; se mostrarán cuando se importe el shapefile)
+    if (nuevas.length > 0) {
+      await this.bulkInsertSeccionesINE(tenantId, nuevas, estadoIdGlobal, estadoGlobal);
+    }
+
+    // 3) Upsert resultados históricos
+    const historicos: any[] = [];
+    validas.forEach((f) => {
+      [2024, 2021, 2018].forEach((anio) => {
+        const h = f.historicos[anio];
+        if (!h) return;
+        if (
+          h.partido_ganador == null &&
+          h.votos_ganador == null &&
+          h.votos_totales == null &&
+          h.participacion_pct == null &&
+          h.votos_nulos == null
+        ) {
+          return;
+        }
+        historicos.push({
+          seccion: f.seccion,
+          anio,
+          estado_id: estadoIdGlobal,
+          municipio_id: f.municipio_id,
+          ...h,
+        });
+      });
+    });
+
+    if (historicos.length > 0) {
+      await this.bulkUpsertResultadosHistoricos(tenantId, historicos);
+    }
+
+    return {
+      total_filas: rows.length,
+      importadas: validas.length,
+      actualizadas: actualizables.length,
+      nuevas: nuevas.length,
+      historicos: historicos.length,
+      omitidas,
+    };
+  }
+
+  private leerExcel(buffer: Buffer): Record<string, any>[] {
+    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
+    if (!workbook.SheetNames.length) {
+      throw new BadRequestException('El archivo Excel no tiene hojas');
+    }
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false }) as any[];
+    return raw.map((r) => this.normalizarKeys(r));
+  }
+
+  private normalizarKeys(obj: any): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (k == null) continue;
+      const key = String(k)
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      out[key] = v;
+    }
+    return out;
+  }
+
+  private normalizarTexto(texto?: string | null): string {
+    if (texto == null) return '';
+    return String(texto)
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
+  }
+
+  private normalizarFilaExcel(fila: Record<string, any>, estadoId: number, estadoDefault: string) {
+    const seccionRaw = this.extraerCampo(fila, [
+      'seccion', 'secc', 'seccion_electoral', 'secc_electoral', 'seccion_ine', 'seccion_elec',
+    ]);
+    const seccion = seccionRaw ? String(seccionRaw).padStart(4, '0').slice(0, 4) : '';
+
+    const municipioNombre =
+      this.extraerCampo(fila, ['municipio', 'nom_mun', 'municipio_nombre', 'municipio_nomb']) || undefined;
+    const municipioId = this.parsearEntero(
+      this.extraerCampo(fila, ['municipio_id', 'cve_mun', 'id_municipio', 'clave_municipio', 'municipio_clave']),
+      undefined as any,
+    );
+
+    const nombre =
+      this.extraerCampo(fila, [
+        'nombre', 'nombre_seccion', 'nombre_de_la_seccion', 'alias', 'seccion_nombre',
+      ]) || undefined;
+
+    const colorRaw = this.extraerCampo(fila, ['color', 'color_seccion', 'hex_color']);
+    const color = colorRaw && this.esColorValido(colorRaw) ? colorRaw : undefined;
+
+    const distritoFederal = this.parsearEntero(
+      this.extraerCampo(fila, ['distrito_federal', 'distritof', 'distrito_f', 'df']),
+      undefined as any,
+    );
+    const distritoLocal = this.parsearEntero(
+      this.extraerCampo(fila, ['distrito_local', 'distritol', 'distrito_l', 'dl']),
+      undefined as any,
+    );
+
+    const padron2024 = this.parsearEntero(
+      this.extraerCampo(fila, ['padron_2024', 'padron', 'electores', 'padron_electoral']),
+      undefined as any,
+    );
+    const listaNominal2024 = this.parsearEntero(
+      this.extraerCampo(fila, ['lista_nominal_2024', 'lista_nominal', 'ln', 'lista']),
+      undefined as any,
+    );
+    const casillasTotal = this.parsearEntero(
+      this.extraerCampo(fila, ['casillas_total', 'casillas', 'total_casillas', 'numero_casillas']),
+      undefined as any,
+    );
+    const meta = this.extraerCampo(fila, ['meta', 'prioridad', 'meta_votos']) || undefined;
+    const observaciones = this.extraerCampo(fila, ['observaciones', 'notas', 'obs', 'comentarios']) || undefined;
+
+    const historicos: Record<number, any> = {};
+    for (const anio of [2024, 2021, 2018]) {
+      const sufijo = String(anio).slice(2);
+      historicos[anio] = {
+        partido_ganador:
+          this.extraerCampo(fila, [
+            `ganador_${anio}`,
+            `partido_ganador_${anio}`,
+            `ganador_${sufijo}`,
+            `partido_${anio}`,
+            `partido_${sufijo}`,
+          ]) || undefined,
+        votos_ganador: this.parsearEntero(
+          this.extraerCampo(fila, [
+            `votos_ganador_${anio}`,
+            `votos_ganador_${sufijo}`,
+            `votos_ganador`,
+          ]),
+          undefined as any,
+        ),
+        votos_totales: this.parsearEntero(
+          this.extraerCampo(fila, [
+            `votos_totales_${anio}`,
+            `votos_totales_${sufijo}`,
+            `total_votos_${anio}`,
+            `total_votos_${sufijo}`,
+          ]),
+          undefined as any,
+        ),
+        participacion_pct: this.parsearFloat(
+          this.extraerCampo(fila, [
+            `participacion_${anio}`,
+            `participacion_${sufijo}`,
+            `participacion_pct_${anio}`,
+            `participacion_pct_${sufijo}`,
+            `participacion`,
+          ]),
+          undefined as any,
+        ),
+        votos_nulos: this.parsearEntero(
+          this.extraerCampo(fila, [
+            `votos_nulos_${anio}`,
+            `votos_nulos_${sufijo}`,
+            `nulos_${anio}`,
+            `nulos_${sufijo}`,
+          ]),
+          undefined as any,
+        ),
+      };
+    }
+
+    return {
+      seccion,
+      nombre,
+      estado: estadoDefault,
+      estado_id: estadoId,
+      municipio: municipioNombre,
+      municipio_id: municipioId,
+      distrito_federal: distritoFederal,
+      distrito_local: distritoLocal,
+      padron_2024: padron2024,
+      lista_nominal_2024: listaNominal2024,
+      casillas_total: casillasTotal,
+      meta,
+      observaciones,
+      color,
+      historicos,
+    };
+  }
+
+  private esColorValido(value: string): boolean {
+    return /^#([0-9A-Fa-f]{3}){1,2}$/.test(String(value).trim());
+  }
+
+  private parsearFloat<T extends number | undefined = number>(value: any, defaultValue: T = 0 as T): T | number {
+    if (value === null || value === undefined || value === '') return defaultValue;
+    const s = String(value).replace('%', '').replace(',', '').trim();
+    const n = Number(s);
+    return Number.isFinite(n) ? n : defaultValue;
+  }
+
+  private async bulkUpdateSeccionesINE(
+    tenantId: string,
+    actualizables: Array<{ id: string; fila: any }>,
+    estadoDefault: string,
+  ) {
+    // Preparar arrays para UPDATE ... FROM unnest
+    const ids: string[] = [];
+    const nombres: (string | null)[] = [];
+    const municipios: (string | null)[] = [];
+    const distritosFed: (number | null)[] = [];
+    const distritosLoc: (number | null)[] = [];
+    const padrones: (number | null)[] = [];
+    const listas: (number | null)[] = [];
+    const casillas: (number | null)[] = [];
+    const metas: (string | null)[] = [];
+    const observs: (string | null)[] = [];
+    const colores: (string | null)[] = [];
+
+    actualizables.forEach(({ id, fila }) => {
+      ids.push(id);
+      nombres.push(fila.nombre ?? null);
+      municipios.push(fila.municipio ?? null);
+      distritosFed.push(fila.distrito_federal ?? null);
+      distritosLoc.push(fila.distrito_local ?? null);
+      padrones.push(fila.padron_2024 ?? null);
+      listas.push(fila.lista_nominal_2024 ?? null);
+      casillas.push(fila.casillas_total ?? null);
+      metas.push(fila.meta ?? null);
+      observs.push(fila.observaciones ?? null);
+      colores.push(fila.color ?? null);
+    });
+
+    await this.prisma.$queryRawUnsafe(
+      `UPDATE secciones_ine AS target
+       SET
+         nombre = COALESCE(data.nombre, target.nombre),
+         municipio = COALESCE(data.municipio, target.municipio),
+         distrito_federal = COALESCE(data.distrito_federal, target.distrito_federal),
+         distrito_local = COALESCE(data.distrito_local, target.distrito_local),
+         padron_2024 = COALESCE(data.padron_2024, target.padron_2024),
+         lista_nominal_2024 = COALESCE(data.lista_nominal_2024, target.lista_nominal_2024),
+         casillas_total = COALESCE(data.casillas_total, target.casillas_total),
+         meta = COALESCE(data.meta, target.meta),
+         observaciones = COALESCE(data.observaciones, target.observaciones),
+         color = COALESCE(data.color, target.color)
+       FROM (
+         SELECT
+           unnest($1::uuid[]) AS id,
+           unnest($2::text[]) AS nombre,
+           unnest($3::text[]) AS municipio,
+           unnest($4::int[]) AS distrito_federal,
+           unnest($5::int[]) AS distrito_local,
+           unnest($6::int[]) AS padron_2024,
+           unnest($7::int[]) AS lista_nominal_2024,
+           unnest($8::int[]) AS casillas_total,
+           unnest($9::text[]) AS meta,
+           unnest($10::text[]) AS observaciones,
+           unnest($11::text[]) AS color
+       ) AS data
+       WHERE target.id = data.id AND target.tenant_id = $12::uuid`,
+      ids,
+      nombres,
+      municipios,
+      distritosFed,
+      distritosLoc,
+      padrones,
+      listas,
+      casillas,
+      metas,
+      observs,
+      colores,
+      tenantId,
+    );
+  }
+
+  private async bulkInsertSeccionesINE(
+    tenantId: string,
+    nuevas: any[],
+    estadoId: number,
+    estadoNombre: string,
+  ) {
+    const chunkSize = 500;
+    for (let i = 0; i < nuevas.length; i += chunkSize) {
+      const chunk = nuevas.slice(i, i + chunkSize);
+      const values: any[] = [];
+      const placeholders: string[] = [];
+      let idx = 1;
+      for (const f of chunk) {
+        placeholders.push(
+          `($${idx++}::uuid, $${idx++}::uuid, $${idx++}::varchar(4), $${idx++}::text, $${idx++}::text, $${idx++}::int, $${idx++}::text, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::text, $${idx++}::text, $${idx++}::text, $${idx++}::jsonb)`,
+        );
+        values.push(
+          randomUUID(),
+          tenantId,
+          f.seccion,
+          f.nombre ?? null,
+          estadoNombre,
+          estadoId,
+          f.municipio ?? 'Sin municipio',
+          f.municipio_id,
+          f.distrito_federal ?? null,
+          f.distrito_local ?? null,
+          f.padron_2024 ?? null,
+          f.lista_nominal_2024 ?? null,
+          f.casillas_total ?? null,
+          f.meta ?? null,
+          f.observaciones ?? null,
+          f.color ?? null,
+          null, // coordenadas
+        );
+      }
+
+      const query = `
+        INSERT INTO secciones_ine (
+          id, tenant_id, seccion, nombre, estado, estado_id, municipio, municipio_id,
+          distrito_federal, distrito_local, padron_2024, lista_nominal_2024,
+          casillas_total, meta, observaciones, color, coordenadas
+        ) VALUES ${placeholders.join(', ')}
+        ON CONFLICT (tenant_id, estado_id, municipio_id, seccion)
+        DO UPDATE SET
+          nombre = COALESCE(EXCLUDED.nombre, secciones_ine.nombre),
+          estado = COALESCE(EXCLUDED.estado, secciones_ine.estado),
+          municipio = COALESCE(EXCLUDED.municipio, secciones_ine.municipio),
+          distrito_federal = COALESCE(EXCLUDED.distrito_federal, secciones_ine.distrito_federal),
+          distrito_local = COALESCE(EXCLUDED.distrito_local, secciones_ine.distrito_local),
+          padron_2024 = COALESCE(EXCLUDED.padron_2024, secciones_ine.padron_2024),
+          lista_nominal_2024 = COALESCE(EXCLUDED.lista_nominal_2024, secciones_ine.lista_nominal_2024),
+          casillas_total = COALESCE(EXCLUDED.casillas_total, secciones_ine.casillas_total),
+          meta = COALESCE(EXCLUDED.meta, secciones_ine.meta),
+          observaciones = COALESCE(EXCLUDED.observaciones, secciones_ine.observaciones),
+          color = COALESCE(EXCLUDED.color, secciones_ine.color)
+      `;
+      await this.prisma.$queryRawUnsafe(query, ...values);
+    }
+  }
+
+  private async bulkUpsertResultadosHistoricos(tenantId: string, historicos: any[]) {
+    const chunkSize = 500;
+    for (let i = 0; i < historicos.length; i += chunkSize) {
+      const chunk = historicos.slice(i, i + chunkSize);
+      const values: any[] = [];
+      const placeholders: string[] = [];
+      let idx = 1;
+      for (const h of chunk) {
+        placeholders.push(
+          `($${idx++}, $${idx++}::uuid, $${idx++}::varchar(4), $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::text, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::real)`,
+        );
+        values.push(
+          tenantId,
+          h.seccion,
+          h.anio,
+          h.estado_id ?? null,
+          h.municipio_id ?? null,
+          h.partido_ganador ?? null,
+          h.votos_ganador ?? null,
+          h.votos_totales ?? null,
+          h.votos_nulos ?? null,
+          h.participacion_pct ?? null,
+        );
+      }
+
+      const query = `
+        INSERT INTO resultados_historicos (
+          tenant_id, seccion, anio, estado_id, municipio_id,
+          partido_ganador, votos_ganador, votos_totales, votos_nulos, participacion_pct
+        ) VALUES ${placeholders.join(', ')}
+        ON CONFLICT (tenant_id, seccion, anio)
+        DO UPDATE SET
+          estado_id = COALESCE(EXCLUDED.estado_id, resultados_historicos.estado_id),
+          municipio_id = COALESCE(EXCLUDED.municipio_id, resultados_historicos.municipio_id),
+          partido_ganador = COALESCE(EXCLUDED.partido_ganador, resultados_historicos.partido_ganador),
+          votos_ganador = COALESCE(EXCLUDED.votos_ganador, resultados_historicos.votos_ganador),
+          votos_totales = COALESCE(EXCLUDED.votos_totales, resultados_historicos.votos_totales),
+          votos_nulos = COALESCE(EXCLUDED.votos_nulos, resultados_historicos.votos_nulos),
+          participacion_pct = COALESCE(EXCLUDED.participacion_pct, resultados_historicos.participacion_pct)
+      `;
+      await this.prisma.$queryRawUnsafe(query, ...values);
+    }
+  }
+
   private extraerCampo(props: Record<string, any>, candidatos: string[]): string | undefined {
     for (const key of candidatos) {
       if (props[key] != null && String(props[key]).trim() !== '') {
@@ -433,7 +935,7 @@ export class MapasService {
       const secciones = await this.prisma.seccionINE.findMany({
         where: { ...baseWhere, municipio_id: 20 },
       });
-      return this.formatearSecciones(secciones);
+      return this.formatearSecciones(tenantId, secciones);
     }
 
     const set = new Set<string>();
@@ -452,32 +954,82 @@ export class MapasService {
       const secciones = await this.prisma.seccionINE.findMany({
         where: { ...baseWhere, municipio_id: 20 },
       });
-      return this.formatearSecciones(secciones);
+      return this.formatearSecciones(tenantId, secciones);
     }
 
     const secciones = await this.prisma.seccionINE.findMany({
       where: { ...baseWhere, seccion: { in: Array.from(set) } },
     });
 
-    return this.formatearSecciones(secciones);
+    return this.formatearSecciones(tenantId, secciones);
   }
 
-  private formatearSecciones(secciones: any[]) {
+  private async formatearSecciones(tenantId: string, secciones: any[]) {
+    if (secciones.length === 0) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+
+    const seccionIds = secciones.map((s) => s.seccion);
+
+    const [resultadosHistoricos, casillasCount] = await Promise.all([
+      this.prisma.resultadoHistorico.findMany({
+        where: { tenant_id: tenantId, seccion: { in: seccionIds } },
+        orderBy: { anio: 'desc' },
+      }).catch((e: any) => {
+        console.error('[formatearSecciones] resultadosHistoricos error:', e?.message);
+        return [];
+      }),
+      this.prisma.casilla.groupBy({
+        by: ['seccion'],
+        where: { tenant_id: tenantId, seccion: { in: seccionIds } },
+        _count: { id: true },
+      }).catch((e: any) => {
+        console.error('[formatearSecciones] casillasCount error:', e?.message);
+        return [];
+      }),
+    ]);
+
+    const resultadosPorSeccion: Record<string, any> = {};
+    resultadosHistoricos.forEach((r: any) => {
+      if (!resultadosPorSeccion[r.seccion]) resultadosPorSeccion[r.seccion] = {};
+      resultadosPorSeccion[r.seccion][r.anio] = r;
+    });
+
+    const casillasPorSeccion: Record<string, number> = {};
+    casillasCount.forEach((c: any) => {
+      casillasPorSeccion[c.seccion] = c._count?.id ?? 0;
+    });
+
     const features = secciones
       .filter(s => s.coordenadas)
-      .map(s => ({
-        type: 'Feature',
-        geometry: s.coordenadas,
-        properties: {
-          id: s.seccion,
-          seccion: s.seccion,
-          nombre: `Sección ${s.seccion}`,
-          estado: s.estado,
-          municipio: s.municipio,
-          padron_2024: s.padron_2024,
-          lista_nominal_2024: s.lista_nominal_2024,
-        },
-      }));
+      .map(s => {
+        const historicos = resultadosPorSeccion[s.seccion] || {};
+        const ultimo = historicos[2024] || historicos[2021] || historicos[2018] || null;
+        return {
+          type: 'Feature',
+          geometry: s.coordenadas,
+          properties: {
+            id: s.seccion,
+            seccion: s.seccion,
+            nombre: s.nombre || `Sección ${s.seccion}`,
+            estado: s.estado,
+            municipio: s.municipio,
+            distrito_federal: s.distrito_federal,
+            distrito_local: s.distrito_local,
+            padron_2024: s.padron_2024,
+            lista_nominal_2024: s.lista_nominal_2024,
+            casillas_total: s.casillas_total,
+            casillas_count: casillasPorSeccion[s.seccion] || 0,
+            meta: s.meta,
+            observaciones: s.observaciones,
+            color: s.color,
+            resultado_2024: historicos[2024] || null,
+            resultado_2021: historicos[2021] || null,
+            resultado_2018: historicos[2018] || null,
+            resultado_ultimo: ultimo,
+          },
+        };
+      });
 
     return { type: 'FeatureCollection', features };
   }

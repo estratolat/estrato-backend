@@ -652,6 +652,7 @@ model SeccionINE {
   id                  String   @id @default(uuid()) @db.Uuid
   tenant_id           String   @db.Uuid
   seccion             String   @db.VarChar(4)
+  nombre              String?  // nombre o alias de la sección
   estado              String
   estado_id           Int
   municipio           String
@@ -660,6 +661,10 @@ model SeccionINE {
   distrito_local      Int?
   padron_2024         Int?
   lista_nominal_2024  Int?
+  casillas_total      Int?     // total de casillas reportado por campaña
+  meta                String?  // meta / prioridad asignada por campaña
+  observaciones       String?  // notas de la sección
+  color               String?  // color personalizado del polígono
   coordenadas         Json?    // GeoJSON MultiPolygon
 
   // Relaciones

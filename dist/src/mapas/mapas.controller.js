@@ -20,6 +20,7 @@ const gis_parser_service_1 = require("./gis-parser.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const tenant_guard_1 = require("../common/guards/tenant.guard");
 const importar_secciones_ine_dto_1 = require("./dto/importar-secciones-ine.dto");
+const importar_secciones_excel_dto_1 = require("./dto/importar-secciones-excel.dto");
 const buscar_global_dto_1 = require("./dto/buscar-global.dto");
 const detalle_territorial_dto_1 = require("./dto/detalle-territorial.dto");
 let MapasController = class MapasController {
@@ -65,6 +66,15 @@ let MapasController = class MapasController {
             municipio_id: body.municipio_id != null ? Number(body.municipio_id) : undefined,
             municipio: body.municipio,
             anio: body.anio ? Number(body.anio) : undefined,
+        });
+    }
+    async importarSeccionesExcel(archivo, body, req) {
+        if (!archivo) {
+            throw new common_1.BadRequestException('No se recibió archivo');
+        }
+        return this.mapasService.importarSeccionesExcel(req.tenant.id, archivo.buffer, {
+            estado_id: body.estado_id ? Number(body.estado_id) : undefined,
+            estado: body.estado,
         });
     }
     async buscarGlobal(dto, req) {
@@ -195,6 +205,24 @@ __decorate([
     __metadata("design:paramtypes", [Object, importar_secciones_ine_dto_1.ImportarSeccionesIneDto, Object]),
     __metadata("design:returntype", Promise)
 ], MapasController.prototype, "importarSeccionesINE", null);
+__decorate([
+    (0, common_1.Post)('secciones/importar-excel'),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('archivo', {
+        limits: { fileSize: 20 * 1024 * 1024 },
+        fileFilter: (req, file, cb) => {
+            const allowed = ['.xlsx', '.xls', '.csv'];
+            const ext = file.originalname.toLowerCase();
+            const valid = allowed.some(a => ext.endsWith(a));
+            cb(valid ? null : new common_1.BadRequestException('Solo se permiten archivos Excel (.xlsx, .xls) o CSV'), valid);
+        },
+    })),
+    __param(0, (0, common_1.UploadedFile)()),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, importar_secciones_excel_dto_1.ImportarSeccionesExcelDto, Object]),
+    __metadata("design:returntype", Promise)
+], MapasController.prototype, "importarSeccionesExcel", null);
 __decorate([
     (0, common_1.Get)('buscar-global'),
     __param(0, (0, common_1.Query)()),

@@ -1,6 +1,7 @@
 import { MapasService } from './mapas.service';
 import { GisParserService } from './gis-parser.service';
 import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
+import { ImportarSeccionesExcelDto } from './dto/importar-secciones-excel.dto';
 import { BuscarGlobalDto } from './dto/buscar-global.dto';
 import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
 export declare class MapasController {
@@ -117,9 +118,12 @@ export declare class MapasController {
     findAllSeccionesINE(estadoId: string, municipioId: string, req: any): Promise<{
         id: string;
         tenant_id: string;
+        nombre: string | null;
         coordenadas: import("@prisma/client/runtime/library").JsonValue | null;
+        color: string | null;
         municipio: string;
         estado: string;
+        observaciones: string | null;
         seccion: string;
         estado_id: number;
         municipio_id: number;
@@ -127,6 +131,8 @@ export declare class MapasController {
         distrito_local: number | null;
         padron_2024: number | null;
         lista_nominal_2024: number | null;
+        casillas_total: number | null;
+        meta: string | null;
     }[]>;
     importarSeccionesINE(archivo: Express.Multer.File, body: ImportarSeccionesIneDto, req: any): Promise<{
         capa: {
@@ -150,6 +156,14 @@ export declare class MapasController {
             visible: boolean;
         };
         total_secciones: number;
+    }>;
+    importarSeccionesExcel(archivo: Express.Multer.File, body: ImportarSeccionesExcelDto, req: any): Promise<{
+        total_filas: number;
+        importadas: number;
+        actualizadas: number;
+        nuevas: number;
+        historicos: number;
+        omitidas: number;
     }>;
     buscarGlobal(dto: BuscarGlobalDto, req: any): Promise<{
         resultados: any[];

@@ -115,9 +115,12 @@ export declare class MapasService {
     findAllSeccionesINE(tenantId: string, estadoId?: number, municipioId?: number): Promise<{
         id: string;
         tenant_id: string;
+        nombre: string | null;
         coordenadas: import("@prisma/client/runtime/library").JsonValue | null;
+        color: string | null;
         municipio: string;
         estado: string;
+        observaciones: string | null;
         seccion: string;
         estado_id: number;
         municipio_id: number;
@@ -125,6 +128,8 @@ export declare class MapasService {
         distrito_local: number | null;
         padron_2024: number | null;
         lista_nominal_2024: number | null;
+        casillas_total: number | null;
+        meta: string | null;
     }[]>;
     importarSeccionesINE(tenantId: string, userId: string | undefined, geojson: any, metadata: {
         nombre: string;
@@ -157,6 +162,26 @@ export declare class MapasService {
         };
         total_secciones: number;
     }>;
+    importarSeccionesExcel(tenantId: string, buffer: Buffer, opts: {
+        estado_id?: number;
+        estado?: string;
+    }): Promise<{
+        total_filas: number;
+        importadas: number;
+        actualizadas: number;
+        nuevas: number;
+        historicos: number;
+        omitidas: number;
+    }>;
+    private leerExcel;
+    private normalizarKeys;
+    private normalizarTexto;
+    private normalizarFilaExcel;
+    private esColorValido;
+    private parsearFloat;
+    private bulkUpdateSeccionesINE;
+    private bulkInsertSeccionesINE;
+    private bulkUpsertResultadosHistoricos;
     private extraerCampo;
     private normalizarAMultiPolygon;
     private normalizarCapa;
