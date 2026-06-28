@@ -5,6 +5,8 @@ import { GisParserService } from './gis-parser.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
+import { BuscarGlobalDto } from './dto/buscar-global.dto';
+import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
 
 @Controller('mapas')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -65,7 +67,7 @@ export class MapasController {
 
   @Post('secciones-ine/importar')
   @UseInterceptors(FileInterceptor('archivo', {
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB para shapefiles completos
+    limits: { fileSize: 150 * 1024 * 1024 }, // 150 MB para shapefiles estatales completos
     fileFilter: (req, file, cb) => {
       const allowed = ['.kml', '.geojson', '.json', '.zip', '.gpx'];
       const ext = file.originalname.toLowerCase();
@@ -82,7 +84,8 @@ export class MapasController {
       throw new BadRequestException('No se recibió archivo');
     }
 
-    const geojson = await this.gisParser.parse(archivo);
+    const shapefileHint = body.shapefile_hint;
+    const geojson = await this.gisParser.parse(archivo, undefined, shapefileHint);
 
     return this.mapasService.importarSeccionesINE(
       req.tenant.id,
@@ -93,11 +96,29 @@ export class MapasController {
         color: body.color,
         estado_id: Number(body.estado_id),
         estado: body.estado,
-        municipio_id: Number(body.municipio_id),
+        municipio_id: body.municipio_id != null ? Number(body.municipio_id) : undefined,
         municipio: body.municipio,
         anio: body.anio ? Number(body.anio) : undefined,
       },
     );
+  }
+
+  // Búsqueda global territorial
+  @Get('buscar-global')
+  async buscarGlobal(
+    @Query() dto: BuscarGlobalDto,
+    @Req() req: any,
+  ) {
+    const limit = dto.limit ? parseInt(dto.limit, 10) : 15;
+    return this.mapasService.buscarGlobal(req.tenant.id, dto.q, limit, dto.tipo);
+  }
+
+  @Post('buscar-global/detalle')
+  async detalleTerritorial(
+    @Body() dto: DetalleTerritorialDto,
+    @Req() req: any,
+  ) {
+    return this.mapasService.detalleTerritorial(req.tenant.id, dto);
   }
 
   // Seed de datos demo para mapa territorial (solo development/demo)
@@ -127,8 +148,9 @@ export class MapasController {
     }
 
     const tipoArchivo = body.tipo_archivo;
-    console.log('[subirArchivo] archivo:', archivo.originalname, 'tipo:', tipoArchivo, 'size:', archivo.size, 'mimetype:', archivo.mimetype);
-    const geojson = await this.gisParser.parse(archivo, tipoArchivo);
+    const shapefileHint = body.shapefile_hint || body.shapefileHint;
+    console.log('[subirArchivo] archivo:', archivo.originalname, 'tipo:', tipoArchivo, 'size:', archivo.size, 'mimetype:', archivo.mimetype, 'hint:', shapefileHint);
+    const geojson = await this.gisParser.parse(archivo, tipoArchivo, shapefileHint);
 
     const metadataRaw = body.metadata ? JSON.parse(body.metadata) : {};
 

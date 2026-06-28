@@ -19,6 +19,7 @@ let InegiWmsService = InegiWmsService_1 = class InegiWmsService {
         this.http = http;
         this.logger = new common_1.Logger(InegiWmsService_1.name);
         this.endpoint = 'https://gaia.inegi.org.mx/NLB/mdm5.wms';
+        this.endpointTematico = 'https://gaia.inegi.org.mx/NLB/tunnel/wms/mdm6wms';
         this.layerNames = {
             estados: { layer: 'Límite_geoestadístico_estatal', style: '', cqlField: 'CVE_ENT' },
             municipios: { layer: 'Límite_geoestadístico_municipal', style: '', cqlField: 'CVE_MUN' },
@@ -26,6 +27,7 @@ let InegiWmsService = InegiWmsService_1 = class InegiWmsService {
             ageb: { layer: 'AGEB_urbanas', style: '', cqlField: 'CVE_AGEB' },
             manzanas: { layer: 'Manzanas', style: '', cqlField: 'CVE_MZA' },
             vialidades: { layer: 'Vialidades', style: '', cqlField: '' },
+            geoelectorales: { layer: 'cgeoelectorales', style: '', cqlField: '', tematico: true, indicador: 'POBTOT' },
         };
     }
     async proxyTile(params, res) {
@@ -33,6 +35,7 @@ let InegiWmsService = InegiWmsService_1 = class InegiWmsService {
         if (!config) {
             throw new common_1.BadRequestException('Capa INEGI no soportada');
         }
+        const esTematico = config.tematico;
         const query = new URLSearchParams();
         query.set('Request', 'GetMap');
         query.set('Service', 'WMS');
@@ -46,29 +49,55 @@ let InegiWmsService = InegiWmsService_1 = class InegiWmsService {
         query.set('WIDTH', params.width || '256');
         query.set('HEIGHT', params.height || '256');
         query.set('TILED', 'true');
+        if (esTematico) {
+            query.set('map', '/opt/map/mdm60/tematizacion.map');
+            const indicador = params.indicador || config.indicador || 'POBTOT';
+            query.set('indicador', indicador);
+        }
         const cql = this.buildCql(config.cqlField, params.cve, params.capa);
         if (cql) {
             query.set('CQL_FILTER', cql);
         }
-        const url = `${this.endpoint}?${query.toString()}`;
+        const baseUrl = esTematico ? this.endpointTematico : this.endpoint;
+        const url = `${baseUrl}?${query.toString()}`;
         this.logger.debug(`Proxy INEGI WMS: ${url}`);
         try {
             const response = await (0, rxjs_1.lastValueFrom)(this.http.get(url, {
                 responseType: 'arraybuffer',
-                timeout: 15000,
+                timeout: 20000,
                 headers: { Accept: 'image/png,image/*' },
             }));
-            const contentType = typeof response.headers['content-type'] === 'string'
-                ? response.headers['content-type']
-                : 'image/png';
+            const rawContentType = response.headers['content-type'];
+            const contentType = typeof rawContentType === 'string'
+                ? rawContentType
+                : Array.isArray(rawContentType)
+                    ? rawContentType[0]
+                    : 'image/png';
+            const data = Buffer.isBuffer(response.data)
+                ? response.data
+                : Buffer.from(response.data);
+            if (!contentType.startsWith('image/') || data.length < 100) {
+                this.logger.warn(`Respuesta INEGI no es imagen válida: ${contentType}, ${data.length} bytes. URL: ${url}`);
+                const transparentPng = this.transparentPng();
+                res.setHeader('Content-Type', 'image/png');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.status(200).send(transparentPng);
+                return;
+            }
             res.setHeader('Content-Type', contentType);
             res.setHeader('Cache-Control', 'public, max-age=3600');
-            res.status(200).send(response.data);
+            res.status(200).send(data);
         }
         catch (err) {
             this.logger.error(`Error proxy INEGI WMS: ${err?.message}`, err?.response?.status, url);
-            throw new common_1.BadRequestException('No se pudo obtener la capa del INEGI');
+            const transparentPng = this.transparentPng();
+            res.setHeader('Content-Type', 'image/png');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.status(200).send(transparentPng);
         }
+    }
+    transparentPng() {
+        return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
     }
     buildCql(field, cve, capa) {
         if (!field || !cve)
@@ -110,6 +139,13 @@ let InegiWmsService = InegiWmsService_1 = class InegiWmsService {
                 const mun = clean.slice(2, 5);
                 const loc = clean.slice(5, 9);
                 return `CVE_ENT='${ent}' AND CVE_MUN='${mun}' AND CVE_LOC='${loc}'`;
+            }
+            return '';
+        }
+        if (capa === 'geoelectorales') {
+            if (clean.length >= 2) {
+                const ent = clean.slice(0, 2);
+                return `CVE_ENT='${ent}'`;
             }
             return '';
         }

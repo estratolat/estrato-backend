@@ -13,13 +13,19 @@ export class ImportarSeccionesIneDto {
   @IsString()
   estado: string;
 
+  @IsOptional()
   @IsNumberString()
-  municipio_id: string;
+  municipio_id?: string;
 
+  @IsOptional()
   @IsString()
-  municipio: string;
+  municipio?: string;
 
   @IsOptional()
   @IsString()
   anio?: string;
+
+  @IsOptional()
+  @IsString()
+  shapefile_hint?: string;
 }

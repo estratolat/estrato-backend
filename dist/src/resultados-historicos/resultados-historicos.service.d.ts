@@ -53,6 +53,10 @@ export declare class ResultadosHistoricosService {
     private parsearCsv;
     private parsearLineaCsv;
     private normalizarFila;
+    private normalizarFilaSinaloa;
+    private extraerDesglose;
+    private formatearSeccion;
+    private tieneColumna;
     private extraer;
     private parsearNumero;
     private parsearFloat;

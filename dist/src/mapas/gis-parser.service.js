@@ -38,26 +38,26 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GisParserService = void 0;
 const common_1 = require("@nestjs/common");
 const xmldom_1 = require("@xmldom/xmldom");
-const AdmZip = __importStar(require("adm-zip"));
+const adm_zip_1 = __importDefault(require("adm-zip"));
+const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
+const path = __importStar(require("path"));
+const shapefile = __importStar(require("shapefile"));
+const proj4_1 = __importDefault(require("proj4"));
 let toGeoJSON = null;
-let shpjs = null;
 async function cargarToGeoJSON() {
     if (!toGeoJSON) {
         const mod = await Promise.resolve().then(() => __importStar(require('@tmcw/togeojson')));
         toGeoJSON = mod;
     }
     return toGeoJSON;
-}
-async function cargarShpjs() {
-    if (!shpjs) {
-        const mod = await Promise.resolve().then(() => __importStar(require('shpjs')));
-        shpjs = mod.default || mod;
-    }
-    return shpjs;
 }
 let GisParserService = class GisParserService {
     detectarTipo(nombre) {
@@ -72,7 +72,7 @@ let GisParserService = class GisParserService {
             return 'gpx';
         return 'desconocido';
     }
-    async parse(archivo, tipoArchivo) {
+    async parse(archivo, tipoArchivo, shapefileHint) {
         const buffer = archivo.buffer;
         const originalName = archivo.originalname.toLowerCase();
         const tipo = tipoArchivo || this.detectarTipo(originalName);
@@ -84,7 +84,7 @@ let GisParserService = class GisParserService {
                 return this.parseGeoJson(buffer);
             case 'shapefile':
             case 'shp':
-                return this.parseShapefile(buffer);
+                return this.parseShapefile(buffer, shapefileHint);
             case 'gpx':
                 return this.parseGpx(buffer);
             default:
@@ -115,39 +115,113 @@ let GisParserService = class GisParserService {
             throw new common_1.BadRequestException('El archivo GeoJSON no tiene formato JSON válido');
         }
     }
-    async parseShapefile(buffer) {
-        let shp;
+    async parseShapefile(buffer, shapefileHint) {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'estrato-shapefile-'));
         try {
-            shp = await cargarShpjs();
-            console.log('[parseShapefile] intentando parsear buffer directo, size:', buffer.length);
-            const geojson = await shp(buffer);
-            console.log('[parseShapefile] parse directo ok, features:', geojson?.features?.length);
-            return this.normalizarGeoJSON(geojson);
+            const isZip = buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4B;
+            let shpPath;
+            let dbfPath;
+            let prjString;
+            if (isZip) {
+                const extracted = this.extraerShapefileDeZipAPath(buffer, tmpDir, shapefileHint);
+                shpPath = extracted.shpPath;
+                dbfPath = extracted.dbfPath;
+                prjString = extracted.prjString;
+            }
+            else {
+                shpPath = path.join(tmpDir, 'archivo.shp');
+                fs.writeFileSync(shpPath, buffer);
+            }
+            const source = await shapefile.open(shpPath, dbfPath, { encoding: 'utf-8' });
+            const features = [];
+            let row;
+            while ((row = await source.read()) && !row.done) {
+                features.push({
+                    type: 'Feature',
+                    geometry: row.value.geometry,
+                    properties: row.value.properties || {},
+                });
+            }
+            if (prjString) {
+                const projDef = this.proyeccionDesdePrj(prjString);
+                if (projDef) {
+                    console.log('[parseShapefile] reproyectando de', projDef, 'a WGS84');
+                    features.forEach((f) => {
+                        if (f.geometry) {
+                            f.geometry = this.reproyectarGeometria(f.geometry, projDef);
+                        }
+                    });
+                }
+            }
+            console.log('[parseShapefile] features leídas:', features.length);
+            return this.normalizarGeoJSON({ type: 'FeatureCollection', features });
         }
         catch (err) {
-            console.error('[parseShapefile] Error parseando shapefile directo:', err?.message, err?.stack);
+            console.error('[parseShapefile] Error parseando shapefile:', err?.message, err?.stack);
+            throw new common_1.BadRequestException(`No se pudo procesar el Shapefile: ${err?.message || 'verifica que sea .zip con .shp, .dbf y .shx'}`);
+        }
+        finally {
             try {
-                console.log('[parseShapefile] fallback: extrayendo .shp del zip');
-                const zip = new AdmZip(buffer);
-                const entries = zip.getEntries();
-                console.log('[parseShapefile] entries:', entries.map((e) => e.entryName));
-                const shpEntry = entries.find((e) => e.entryName.toLowerCase().endsWith('.shp'));
-                if (!shpEntry) {
-                    throw new common_1.BadRequestException('El zip no contiene un archivo .shp');
-                }
-                if (!shp)
-                    shp = await cargarShpjs();
-                const shpBuffer = shpEntry.getData();
-                console.log('[parseShapefile] .shp extraído, size:', shpBuffer.length);
-                const geojson = await shp(shpBuffer);
-                console.log('[parseShapefile] parse desde zip ok, features:', geojson?.features?.length);
-                return this.normalizarGeoJSON(geojson);
+                fs.rmSync(tmpDir, { recursive: true, force: true });
             }
-            catch (err2) {
-                console.error('[parseShapefile] Error parseando shapefile desde zip:', err2?.message, err2?.stack);
-                throw new common_1.BadRequestException(`No se pudo procesar el Shapefile: ${err2?.message || 'verifica que sea .zip con .shp, .dbf y .shx'}`);
+            catch {
             }
         }
+    }
+    extraerShapefileDeZipAPath(buffer, tmpDir, shapefileHint) {
+        const zip = new adm_zip_1.default(buffer);
+        const entries = zip.getEntries();
+        const shpEntries = entries.filter((e) => e.entryName.toLowerCase().endsWith('.shp') && !e.entryName.includes('__MACOSX/'));
+        if (shpEntries.length === 0) {
+            throw new common_1.BadRequestException('El zip no contiene archivos .shp');
+        }
+        console.log('[extraerShapefileDeZipAPath] shapefiles encontrados:', shpEntries.map((e) => e.entryName));
+        let shpEntry = shpEntries[0];
+        if (shpEntries.length > 1) {
+            const hint = (shapefileHint || '').toLowerCase().trim();
+            const keywords = hint ? hint.split(/[,;\s]+/).filter(Boolean) : [];
+            const seccionKeywords = ['seccion', 'secciones', 'secc', 'section'];
+            const score = (entry) => {
+                const name = entry.entryName.toLowerCase().replace(/\.shp$/, '');
+                let s = 0;
+                keywords.forEach((k) => { if (name.includes(k))
+                    s += 10; });
+                seccionKeywords.forEach((k) => { if (name.includes(k))
+                    s += 5; });
+                const aux = ['adoquin', 'aeropuerto', 'autopista', 'brecha', 'cementerio', 'edificio',
+                    'escuela', 'hospital', 'iglesia', 'mercado', 'puente', 'rio', 'rios', 'vialidad',
+                    'vereda', 'colonia', 'localidad', 'manzana', 'municipio', 'distrito', 'entidad'];
+                aux.forEach((a) => { if (name.includes(a))
+                    s -= 20; });
+                return s;
+            };
+            const sorted = [...shpEntries].sort((a, b) => score(b) - score(a));
+            shpEntry = sorted[0];
+            console.log('[extraerShapefileDeZipAPath] elegido:', shpEntry.entryName, 'score:', score(shpEntry));
+        }
+        const entryBaseName = shpEntry.entryName.replace(/\.shp$/i, '');
+        const baseName = path.basename(entryBaseName);
+        const exts = ['.shp', '.shx', '.dbf', '.prj', '.cpg', '.sbn', '.sbx'];
+        let dbfPath;
+        let prjString;
+        exts.forEach((ext) => {
+            const entryName = `${entryBaseName}${ext}`;
+            const entry = entries.find((e) => e.entryName.toLowerCase() === entryName.toLowerCase());
+            if (entry) {
+                const data = entry.getData();
+                const outPath = path.join(tmpDir, `${baseName}${ext}`);
+                fs.writeFileSync(outPath, data);
+                if (ext === '.dbf')
+                    dbfPath = outPath;
+                if (ext === '.prj')
+                    prjString = data.toString('utf-8');
+            }
+        });
+        const shpPath = path.join(tmpDir, `${baseName}.shp`);
+        if (!fs.existsSync(shpPath)) {
+            throw new common_1.BadRequestException('No se pudo extraer el archivo .shp seleccionado');
+        }
+        return { shpPath, dbfPath, prjString };
     }
     async parseGpx(buffer) {
         try {
@@ -189,6 +263,41 @@ let GisParserService = class GisParserService {
             geometry: feature.geometry,
             properties: feature.properties || {},
         };
+    }
+    proyeccionDesdePrj(prjString) {
+        const matches = [...prjString.matchAll(/AUTHORITY\["EPSG","(\d{4,5})"\]/g)];
+        for (const match of matches) {
+            const code = parseInt(match[1], 10);
+            if (code >= 32601 && code <= 32660) {
+                const zone = code - 32600;
+                return `+proj=utm +zone=${zone} +datum=WGS84 +units=m +no_defs`;
+            }
+            if (code >= 32701 && code <= 32760) {
+                const zone = code - 32700;
+                return `+proj=utm +zone=${zone} +south +datum=WGS84 +units=m +no_defs`;
+            }
+        }
+        if (prjString.includes('EPSG"4326"') || prjString.includes('WGS_1984')) {
+            return undefined;
+        }
+        return undefined;
+    }
+    reproyectarGeometria(geometry, projDef) {
+        if (!geometry || !geometry.coordinates)
+            return geometry;
+        return {
+            ...geometry,
+            coordinates: this.reproyectarNodo(geometry.coordinates, projDef),
+        };
+    }
+    reproyectarNodo(node, projDef) {
+        if (Array.isArray(node) && node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+            return (0, proj4_1.default)(projDef, proj4_1.default.WGS84, node);
+        }
+        if (Array.isArray(node)) {
+            return node.map((child) => this.reproyectarNodo(child, projDef));
+        }
+        return node;
     }
 };
 exports.GisParserService = GisParserService;

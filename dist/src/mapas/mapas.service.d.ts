@@ -1,7 +1,11 @@
 import { PrismaService } from '../common/services/prisma.service';
+import { InegiService } from '../inegi/inegi.service';
+import { NominatimService } from '../inegi/nominatim.service';
 export declare class MapasService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private inegiService?;
+    private nominatimService?;
+    constructor(prisma: PrismaService, inegiService?: InegiService, nominatimService?: NominatimService);
     findAllCapas(tenantId: string): Promise<{
         predefinidas: {
             id: string;
@@ -28,9 +32,9 @@ export declare class MapasService {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
         })[];
     }>;
     findOneCapa(id: string, tenantId: string): Promise<{
@@ -49,9 +53,9 @@ export declare class MapasService {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     createCapa(data: any, tenantId: string, userId?: string): Promise<{
         creador: {
@@ -69,9 +73,9 @@ export declare class MapasService {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     updateCapa(id: string, data: any, tenantId: string): Promise<{
         creador: {
@@ -89,9 +93,9 @@ export declare class MapasService {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     removeCapa(id: string, tenantId: string): Promise<{
         id: string;
@@ -104,9 +108,9 @@ export declare class MapasService {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     findAllSeccionesINE(tenantId: string, estadoId?: number, municipioId?: number): Promise<{
         id: string;
@@ -127,8 +131,8 @@ export declare class MapasService {
         color: string;
         estado_id: number;
         estado: string;
-        municipio_id: number;
-        municipio: string;
+        municipio_id?: number;
+        municipio?: string;
         anio?: number;
     }): Promise<{
         capa: {
@@ -147,9 +151,9 @@ export declare class MapasService {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
         };
         total_secciones: number;
     }>;
@@ -183,4 +187,55 @@ export declare class MapasService {
         message: string;
         total: number;
     }>;
+    buscarGlobal(tenantId: string, query: string, limit?: number, tipoFiltro?: string): Promise<{
+        resultados: any[];
+    }>;
+    private filtrarInegiGlobal;
+    detalleTerritorial(tenantId: string, dto: {
+        tipo: string;
+        id: string;
+        nombre: string;
+        geometry: any;
+        estado_id?: number;
+        municipio_id?: number;
+        seccion?: string;
+        clave?: string;
+    }): Promise<{
+        tipo: string;
+        id: string;
+        nombre: string;
+        geometry: any;
+        bbox: [number, number, number, number];
+        datos_oficiales: any;
+        resumen: {
+            votantes: {
+                count: number;
+                items: any[];
+            };
+            lideres: {
+                count: number;
+                items: any[];
+            };
+            apoyos: {
+                count: number;
+                items: any[];
+            };
+            eventos: {
+                count: number;
+                items: any[];
+            };
+            peticiones: {
+                count: number;
+                items: any[];
+            };
+        };
+    }>;
+    private contarYListarVotantes;
+    private contarYListarLideres;
+    private contarYListarApoyos;
+    private contarEventos;
+    private contarPeticiones;
+    private candidatosEnBBox;
+    private puntoEnPoligono;
+    private bboxFromGeometry;
 }

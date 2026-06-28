@@ -16,11 +16,18 @@ import { LlamadasModule } from './llamadas/llamadas.module';
 import { BoletinesModule } from './boletines/boletines.module';
 import { IneModule } from './ine/ine.module';
 import { MapasModule } from './mapas/mapas.module';
+import { AdminModule } from './admin/admin.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { PeticionesModule } from './peticiones/peticiones.module';
 import { CandidatoModule } from './candidato/candidato.module';
 import { InegiModule } from './inegi/inegi.module';
+import { ColoniasModule } from './colonias/colonias.module';
 import { ResultadosHistoricosModule } from './resultados-historicos/resultados-historicos.module';
+import { EncuestasModule } from './encuestas/encuestas.module';
+import { CasillasModule } from './casillas/casillas.module';
+import { MonitoreoModule } from './monitoreo/monitoreo.module';
+import { ProyeccionModule } from './proyeccion/proyeccion.module';
+import { FichasSeccionalesModule } from './fichas-seccionales/fichas-seccionales.module';
 
 @Module({
   imports: [
@@ -43,11 +50,18 @@ import { ResultadosHistoricosModule } from './resultados-historicos/resultados-h
     BoletinesModule,
     IneModule,
     MapasModule,
+    AdminModule,
     UploadsModule,
     PeticionesModule,
     CandidatoModule,
     InegiModule,
+    ColoniasModule,
     ResultadosHistoricosModule,
+    EncuestasModule,
+    CasillasModule,
+    MonitoreoModule,
+    ProyeccionModule,
+    FichasSeccionalesModule,
   ],
   controllers: [AppController],
 })

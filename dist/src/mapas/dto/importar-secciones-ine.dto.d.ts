@@ -3,7 +3,8 @@ export declare class ImportarSeccionesIneDto {
     color: string;
     estado_id: string;
     estado: string;
-    municipio_id: string;
-    municipio: string;
+    municipio_id?: string;
+    municipio?: string;
     anio?: string;
+    shapefile_hint?: string;
 }

@@ -20,6 +20,8 @@ const gis_parser_service_1 = require("./gis-parser.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const tenant_guard_1 = require("../common/guards/tenant.guard");
 const importar_secciones_ine_dto_1 = require("./dto/importar-secciones-ine.dto");
+const buscar_global_dto_1 = require("./dto/buscar-global.dto");
+const detalle_territorial_dto_1 = require("./dto/detalle-territorial.dto");
 let MapasController = class MapasController {
     constructor(mapasService, gisParser) {
         this.mapasService = mapasService;
@@ -53,16 +55,24 @@ let MapasController = class MapasController {
         if (!archivo) {
             throw new common_1.BadRequestException('No se recibió archivo');
         }
-        const geojson = await this.gisParser.parse(archivo);
+        const shapefileHint = body.shapefile_hint;
+        const geojson = await this.gisParser.parse(archivo, undefined, shapefileHint);
         return this.mapasService.importarSeccionesINE(req.tenant.id, req.usuario?.id, geojson, {
             nombre: body.nombre,
             color: body.color,
             estado_id: Number(body.estado_id),
             estado: body.estado,
-            municipio_id: Number(body.municipio_id),
+            municipio_id: body.municipio_id != null ? Number(body.municipio_id) : undefined,
             municipio: body.municipio,
             anio: body.anio ? Number(body.anio) : undefined,
         });
+    }
+    async buscarGlobal(dto, req) {
+        const limit = dto.limit ? parseInt(dto.limit, 10) : 15;
+        return this.mapasService.buscarGlobal(req.tenant.id, dto.q, limit, dto.tipo);
+    }
+    async detalleTerritorial(dto, req) {
+        return this.mapasService.detalleTerritorial(req.tenant.id, dto);
     }
     seedDemo(req) {
         return this.mapasService.seedDemo(req.tenant.id);
@@ -72,8 +82,9 @@ let MapasController = class MapasController {
             throw new common_1.BadRequestException('No se recibió archivo');
         }
         const tipoArchivo = body.tipo_archivo;
-        console.log('[subirArchivo] archivo:', archivo.originalname, 'tipo:', tipoArchivo, 'size:', archivo.size, 'mimetype:', archivo.mimetype);
-        const geojson = await this.gisParser.parse(archivo, tipoArchivo);
+        const shapefileHint = body.shapefile_hint || body.shapefileHint;
+        console.log('[subirArchivo] archivo:', archivo.originalname, 'tipo:', tipoArchivo, 'size:', archivo.size, 'mimetype:', archivo.mimetype, 'hint:', shapefileHint);
+        const geojson = await this.gisParser.parse(archivo, tipoArchivo, shapefileHint);
         const metadataRaw = body.metadata ? JSON.parse(body.metadata) : {};
         const capa = await this.mapasService.createCapa({
             nombre: body.nombre || archivo.originalname,
@@ -169,7 +180,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('secciones-ine/importar'),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('archivo', {
-        limits: { fileSize: 50 * 1024 * 1024 },
+        limits: { fileSize: 150 * 1024 * 1024 },
         fileFilter: (req, file, cb) => {
             const allowed = ['.kml', '.geojson', '.json', '.zip', '.gpx'];
             const ext = file.originalname.toLowerCase();
@@ -184,6 +195,22 @@ __decorate([
     __metadata("design:paramtypes", [Object, importar_secciones_ine_dto_1.ImportarSeccionesIneDto, Object]),
     __metadata("design:returntype", Promise)
 ], MapasController.prototype, "importarSeccionesINE", null);
+__decorate([
+    (0, common_1.Get)('buscar-global'),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [buscar_global_dto_1.BuscarGlobalDto, Object]),
+    __metadata("design:returntype", Promise)
+], MapasController.prototype, "buscarGlobal", null);
+__decorate([
+    (0, common_1.Post)('buscar-global/detalle'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [detalle_territorial_dto_1.DetalleTerritorialDto, Object]),
+    __metadata("design:returntype", Promise)
+], MapasController.prototype, "detalleTerritorial", null);
 __decorate([
     (0, common_1.Post)('seed-demo'),
     __param(0, (0, common_1.Req)()),

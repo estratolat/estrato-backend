@@ -12,6 +12,7 @@ const axios_1 = require("@nestjs/axios");
 const inegi_controller_1 = require("./inegi.controller");
 const inegi_service_1 = require("./inegi.service");
 const inegi_wms_service_1 = require("./inegi-wms.service");
+const nominatim_service_1 = require("./nominatim.service");
 const mapas_service_1 = require("../mapas/mapas.service");
 const prisma_service_1 = require("../common/services/prisma.service");
 let InegiModule = class InegiModule {
@@ -21,8 +22,8 @@ exports.InegiModule = InegiModule = __decorate([
     (0, common_1.Module)({
         imports: [axios_1.HttpModule],
         controllers: [inegi_controller_1.InegiController],
-        providers: [inegi_service_1.InegiService, inegi_wms_service_1.InegiWmsService, mapas_service_1.MapasService, prisma_service_1.PrismaService],
-        exports: [inegi_service_1.InegiService, inegi_wms_service_1.InegiWmsService],
+        providers: [inegi_service_1.InegiService, inegi_wms_service_1.InegiWmsService, nominatim_service_1.NominatimService, mapas_service_1.MapasService, prisma_service_1.PrismaService],
+        exports: [inegi_service_1.InegiService, inegi_wms_service_1.InegiWmsService, nominatim_service_1.NominatimService],
     })
 ], InegiModule);
 //# sourceMappingURL=inegi.module.js.map

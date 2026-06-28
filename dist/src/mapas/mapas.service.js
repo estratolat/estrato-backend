@@ -8,11 +8,21 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MapasService = void 0;
 const common_1 = require("@nestjs/common");
+const crypto_1 = require("crypto");
 const prisma_service_1 = require("../common/services/prisma.service");
-const TIPOS_CAPA = ['territorio', 'apoyos', 'lideres', 'votantes', 'secciones_ine', 'eventos', 'recorridos', 'custom', 'inegi'];
+const boolean_point_in_polygon_1 = __importDefault(require("@turf/boolean-point-in-polygon"));
+const inegi_service_1 = require("../inegi/inegi.service");
+const nominatim_service_1 = require("../inegi/nominatim.service");
+const TIPOS_CAPA = ['territorio', 'apoyos', 'lideres', 'votantes', 'secciones_ine', 'eventos', 'recorridos', 'custom', 'inegi', 'colonia'];
 const ORIGENES_CAPA = ['propia', 'externa', 'neutral'];
 const CAPAS_PREDEFINIDAS = [
     { id: 'zonas', tipo: 'territorio', nombre: 'Zonas de trabajo', origen: 'propia', color: '#3B82F6', visible: true, orden: 1 },
@@ -25,8 +35,10 @@ const CAPAS_PREDEFINIDAS = [
     { id: 'recorridos', tipo: 'recorridos', nombre: 'Recorridos de brigada', origen: 'propia', color: '#06B6D4', visible: false, orden: 8 },
 ];
 let MapasService = class MapasService {
-    constructor(prisma) {
+    constructor(prisma, inegiService, nominatimService) {
         this.prisma = prisma;
+        this.inegiService = inegiService;
+        this.nominatimService = nominatimService;
     }
     async findAllCapas(tenantId) {
         const personalizadas = await this.prisma.capaMapa.findMany({
@@ -86,6 +98,8 @@ let MapasService = class MapasService {
         });
     }
     async importarSeccionesINE(tenantId, userId, geojson, metadata) {
+        const metaMunicipioId = this.parsearEntero(metadata.municipio_id, undefined);
+        const metaMunicipioNombre = metadata.municipio?.trim() || undefined;
         if (!geojson || !Array.isArray(geojson.features)) {
             throw new common_1.BadRequestException('El archivo no contiene un GeoJSON FeatureCollection válido');
         }
@@ -101,7 +115,11 @@ let MapasService = class MapasService {
             if (!seccion)
                 continue;
             const estado = metadata.estado || this.extraerCampo(props, ['estado', 'ESTADO', 'NOM_ENT', 'nom_ent', 'entidad']);
-            const municipio = metadata.municipio || this.extraerCampo(props, ['municipio', 'MUNICIPIO', 'NOM_MUN', 'nom_mun', 'municip']);
+            const municipioIdRaw = this.extraerCampo(props, ['municipio_id', 'MUNICIPIO_ID', 'MUNICIPIO', 'MUN', 'CVE_MUN', 'cve_mun', 'MUN_ID']);
+            const municipioIdNum = this.parsearEntero(municipioIdRaw, undefined);
+            const municipioId = municipioIdNum ?? metaMunicipioId ?? 0;
+            const municipioNombreRaw = this.extraerCampo(props, ['NOM_MUN', 'nom_mun', 'municipio', 'MUNICIPIO', 'municip']);
+            const municipio = municipioNombreRaw || metaMunicipioNombre || (municipioId ? `Municipio ${municipioId}` : 'Sin municipio');
             const distritoFederal = this.parsearEntero(this.extraerCampo(props, ['distrito_federal', 'DISTRITO_F', 'DF', 'distrito_f', 'distritof']));
             const distritoLocal = this.parsearEntero(this.extraerCampo(props, ['distrito_local', 'DISTRITO_L', 'DL', 'distrito_l', 'distritol']));
             const padron = this.parsearEntero(this.extraerCampo(props, ['padron_2024', 'PADRON', 'padron', 'PADRON_2024']));
@@ -113,7 +131,7 @@ let MapasService = class MapasService {
                 estado,
                 estado_id: metadata.estado_id,
                 municipio,
-                municipio_id: metadata.municipio_id,
+                municipio_id: municipioId,
                 distrito_federal: distritoFederal,
                 distrito_local: distritoLocal,
                 padron_2024: padron,
@@ -129,7 +147,7 @@ let MapasService = class MapasService {
                     estado,
                     municipio,
                     estado_id: metadata.estado_id,
-                    municipio_id: metadata.municipio_id,
+                    municipio_id: municipioId,
                     distrito_federal: distritoFederal,
                     distrito_local: distritoLocal,
                     padron_2024: padron,
@@ -140,37 +158,35 @@ let MapasService = class MapasService {
         if (secciones.length === 0) {
             throw new common_1.BadRequestException('No se pudieron identificar secciones electorales en el archivo. Verifica que las propiedades incluyan un campo de sección.');
         }
-        for (const s of secciones) {
-            const existing = await this.prisma.seccionINE.findUnique({
-                where: {
-                    tenant_id_estado_id_municipio_id_seccion: {
-                        tenant_id: s.tenant_id,
-                        estado_id: s.estado_id,
-                        municipio_id: s.municipio_id,
-                        seccion: s.seccion,
-                    },
-                },
-            });
-            if (existing) {
-                await this.prisma.seccionINE.update({
-                    where: { id: existing.id },
-                    data: {
-                        estado: s.estado,
-                        municipio: s.municipio,
-                        distrito_federal: s.distrito_federal,
-                        distrito_local: s.distrito_local,
-                        padron_2024: s.padron_2024,
-                        lista_nominal_2024: s.lista_nominal_2024,
-                        coordenadas: s.coordenadas,
-                    },
-                });
+        const chunkSize = 500;
+        for (let i = 0; i < secciones.length; i += chunkSize) {
+            const chunk = secciones.slice(i, i + chunkSize);
+            const values = [];
+            const placeholders = [];
+            let idx = 1;
+            for (const s of chunk) {
+                placeholders.push(`($${idx++}::uuid, $${idx++}::uuid, $${idx++}::varchar(4), $${idx++}::text, $${idx++}::int, $${idx++}::text, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::int, $${idx++}::jsonb)`);
+                values.push((0, crypto_1.randomUUID)(), s.tenant_id, s.seccion, s.estado, s.estado_id, s.municipio, s.municipio_id, s.distrito_federal ?? null, s.distrito_local ?? null, s.padron_2024 ?? null, s.lista_nominal_2024 ?? null, s.coordenadas);
             }
-            else {
-                await this.prisma.seccionINE.create({ data: s });
-            }
+            const query = `
+        INSERT INTO secciones_ine (
+          id, tenant_id, seccion, estado, estado_id, municipio, municipio_id,
+          distrito_federal, distrito_local, padron_2024, lista_nominal_2024, coordenadas
+        ) VALUES ${placeholders.join(', ')}
+        ON CONFLICT (tenant_id, estado_id, municipio_id, seccion)
+        DO UPDATE SET
+          estado = EXCLUDED.estado,
+          municipio = EXCLUDED.municipio,
+          distrito_federal = EXCLUDED.distrito_federal,
+          distrito_local = EXCLUDED.distrito_local,
+          padron_2024 = EXCLUDED.padron_2024,
+          lista_nominal_2024 = EXCLUDED.lista_nominal_2024,
+          coordenadas = EXCLUDED.coordenadas
+      `;
+            await this.prisma.$queryRawUnsafe(query, ...values);
         }
-        const capa = await this.createCapa({
-            nombre: metadata.nombre || `Secciones INE ${metadata.municipio}`,
+        const capaPayload = {
+            nombre: metadata.nombre || `Secciones INE ${metadata.estado || metadata.estado_id}`,
             tipo: 'secciones_ine',
             origen: 'externa',
             color: metadata.color || '#9CA3AF',
@@ -185,7 +201,17 @@ let MapasService = class MapasService {
                 total_secciones: collectionFeatures.length,
                 tipo_archivo: 'ine_secciones',
             },
-        }, tenantId, userId);
+        };
+        const capaExistente = await this.prisma.capaMapa.findFirst({
+            where: {
+                tenant_id: tenantId,
+                tipo: 'secciones_ine',
+                metadata: { path: ['estado_id'], equals: metadata.estado_id },
+            },
+        });
+        const capa = capaExistente
+            ? await this.updateCapa(capaExistente.id, capaPayload, tenantId)
+            : await this.createCapa(capaPayload, tenantId, userId);
         return { capa, total_secciones: collectionFeatures.length };
     }
     extraerCampo(props, candidatos) {
@@ -890,10 +916,436 @@ let MapasService = class MapasService {
             total: result.count,
         };
     }
+    async buscarGlobal(tenantId, query, limit = 15, tipoFiltro = 'todos') {
+        const inegi = this.inegiService;
+        const nominatim = this.nominatimService;
+        if (!inegi || !nominatim) {
+            throw new common_1.BadRequestException('Servicios de búsqueda externos no configurados');
+        }
+        const q = (query || '').trim();
+        if (q.length < 2)
+            return { resultados: [] };
+        const max = Math.min(limit, 50);
+        const termino = q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const resultados = [];
+        const incluir = (grupo) => tipoFiltro === 'todos' || tipoFiltro === grupo;
+        const promesas = [];
+        if (incluir('ine')) {
+            promesas.push(this.prisma.seccionINE
+                .findMany({
+                where: {
+                    tenant_id: tenantId,
+                    OR: [
+                        { seccion: { contains: termino } },
+                        { estado: { contains: termino, mode: 'insensitive' } },
+                        { municipio: { contains: termino, mode: 'insensitive' } },
+                        ...(Number.isInteger(Number(termino)) && termino !== ''
+                            ? [
+                                { distrito_local: { equals: Number(termino) } },
+                                { distrito_federal: { equals: Number(termino) } },
+                            ]
+                            : []),
+                    ],
+                },
+                take: max,
+                orderBy: [{ estado_id: 'asc' }, { municipio_id: 'asc' }, { seccion: 'asc' }],
+            })
+                .then((rows) => rows.map((s) => ({
+                id: `ine-seccion-${s.seccion}-${s.estado_id}-${s.municipio_id}`,
+                tipo: 'ine_seccion',
+                nombre: `Sección ${s.seccion}`,
+                descripcion: `${s.municipio}, ${s.estado}`,
+                estado: s.estado,
+                municipio: s.municipio,
+                seccion: s.seccion,
+                estado_id: s.estado_id,
+                municipio_id: s.municipio_id,
+                bbox: this.bboxFromGeometry(s.coordenadas),
+                geometry: s.coordenadas,
+            }))));
+        }
+        if (incluir('inegi')) {
+            promesas.push(inegi
+                .descargar('estados')
+                .then((geo) => this.filtrarInegiGlobal(geo, 'estados', termino, max))
+                .catch(() => []));
+            promesas.push(inegi
+                .descargar('municipios')
+                .then((geo) => this.filtrarInegiGlobal(geo, 'municipios', termino, max))
+                .catch(() => []));
+        }
+        if (incluir('colonia')) {
+            promesas.push(nominatim
+                .buscar(q)
+                .then((rows) => rows.slice(0, max).map((r) => ({
+                id: `nominatim-${r.id}`,
+                tipo: 'colonia',
+                nombre: r.nombre,
+                descripcion: r.direccion,
+                bbox: this.bboxFromGeometry(r.geojson),
+                geometry: r.geojson,
+            })))
+                .catch(() => []));
+        }
+        if (incluir('capa')) {
+            promesas.push(this.prisma.capaMapa
+                .findMany({
+                where: {
+                    tenant_id: tenantId,
+                    tipo: { in: ['colonia', 'custom', 'inegi', 'secciones_ine'] },
+                    nombre: { contains: termino, mode: 'insensitive' },
+                },
+                take: max,
+                orderBy: { nombre: 'asc' },
+            })
+                .then((rows) => rows.map((c) => {
+                const geo = c.geojson?.features?.[0]?.geometry;
+                return {
+                    id: `capa-${c.id}`,
+                    tipo: c.tipo === 'colonia' ? 'capa_colonia' : 'capa_custom',
+                    nombre: c.nombre,
+                    descripcion: c.tipo,
+                    capaId: c.id,
+                    color: c.color,
+                    bbox: geo ? this.bboxFromGeometry(geo) : undefined,
+                    geometry: geo,
+                };
+            })));
+        }
+        const resueltos = await Promise.allSettled(promesas);
+        resueltos.forEach((r) => {
+            if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+                resultados.push(...r.value);
+            }
+        });
+        resultados.sort((a, b) => {
+            const aNombre = (a.nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+            const bNombre = (b.nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+            const aExacto = aNombre.startsWith(termino) ? 2 : aNombre.includes(termino) ? 1 : 0;
+            const bExacto = bNombre.startsWith(termino) ? 2 : bNombre.includes(termino) ? 1 : 0;
+            return bExacto - aExacto;
+        });
+        return { resultados: resultados.slice(0, max) };
+    }
+    filtrarInegiGlobal(geo, tipo, termino, max) {
+        const features = geo?.features || [];
+        return features
+            .filter((f) => {
+            const p = f.properties || {};
+            const nombre = String(p.nomgeo || p.NOMGEO || p.NOMBRE || p.nombre || p.nom_loc || p.NOM_LOC || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[̀-ͯ]/g, '');
+            return nombre.includes(termino);
+        })
+            .slice(0, max)
+            .map((f) => {
+            const p = f.properties || {};
+            const clave = String(p.cvegeo || p.CVEGEO || p.cve_ent || p.CVE_ENT || p.cve_mun || p.CVE_MUN || '');
+            const nombre = p.nomgeo || p.NOMGEO || p.NOMBRE || p.nombre || p.nom_loc || p.NOM_LOC || clave;
+            return {
+                id: `inegi-${tipo}-${clave}`,
+                tipo: tipo === 'estados' ? 'inegi_estado' : 'inegi_municipio',
+                nombre,
+                descripcion: tipo === 'estados' ? 'Estado' : 'Municipio',
+                clave,
+                bbox: this.bboxFromGeometry(f.geometry),
+                geometry: f.geometry,
+            };
+        });
+    }
+    async detalleTerritorial(tenantId, dto) {
+        const geometry = this.normalizarAMultiPolygon(dto.geometry);
+        if (!geometry || !['Point', 'Polygon', 'MultiPolygon'].includes(geometry.type)) {
+            throw new common_1.BadRequestException('La geometría seleccionada no es válida');
+        }
+        const bbox = this.bboxFromGeometry(geometry);
+        const esPoligono = ['Polygon', 'MultiPolygon'].includes(geometry.type);
+        const datosOficiales = {};
+        let seccionFiltro = dto.seccion;
+        if (dto.tipo === 'ine_seccion' && seccionFiltro) {
+            const whereSeccion = { tenant_id: tenantId, seccion: seccionFiltro };
+            if (dto.estado_id)
+                whereSeccion.estado_id = dto.estado_id;
+            if (dto.municipio_id)
+                whereSeccion.municipio_id = dto.municipio_id;
+            const seccionDB = await this.prisma.seccionINE.findFirst({
+                where: whereSeccion,
+                orderBy: { seccion: 'asc' },
+            });
+            if (seccionDB) {
+                datosOficiales.padron_2024 = seccionDB.padron_2024;
+                datosOficiales.lista_nominal_2024 = seccionDB.lista_nominal_2024;
+                datosOficiales.distrito_federal = seccionDB.distrito_federal;
+                datosOficiales.distrito_local = seccionDB.distrito_local;
+            }
+        }
+        const ultimoResultado = seccionFiltro
+            ? await this.prisma.resultadoHistorico.findFirst({
+                where: { tenant_id: tenantId, seccion: seccionFiltro },
+                orderBy: { anio: 'desc' },
+            })
+            : null;
+        if (ultimoResultado) {
+            datosOficiales.partido_ganador = ultimoResultado.partido_ganador;
+            datosOficiales.votos_ganador = ultimoResultado.votos_ganador;
+            datosOficiales.votos_totales = ultimoResultado.votos_totales;
+            datosOficiales.participacion_pct = ultimoResultado.participacion_pct;
+        }
+        let votantes = { count: 0, items: [] };
+        let lideres = { count: 0, items: [] };
+        let apoyos = { count: 0, items: [] };
+        let eventos = { count: 0, items: [] };
+        let peticiones = { count: 0, items: [] };
+        if (esPoligono) {
+            [votantes, lideres, apoyos, eventos, peticiones] = await Promise.all([
+                this.contarYListarVotantes(tenantId, geometry, seccionFiltro, 10),
+                this.contarYListarLideres(tenantId, geometry, seccionFiltro, 10),
+                this.contarYListarApoyos(tenantId, geometry, seccionFiltro, 10),
+                this.contarEventos(tenantId, geometry, seccionFiltro, 10),
+                this.contarPeticiones(tenantId, geometry, seccionFiltro, 10),
+            ]);
+        }
+        return {
+            tipo: dto.tipo,
+            id: dto.id,
+            nombre: dto.nombre,
+            geometry,
+            bbox,
+            datos_oficiales: datosOficiales,
+            resumen: {
+                votantes,
+                lideres,
+                apoyos,
+                eventos,
+                peticiones,
+            },
+        };
+    }
+    async contarYListarVotantes(tenantId, geometry, seccion, limit = 10) {
+        let rows = [];
+        if (seccion) {
+            rows = await this.prisma.votante.findMany({
+                where: { tenant_id: tenantId, activo: true, seccion_electoral: seccion },
+                orderBy: { created_at: 'desc' },
+            });
+        }
+        else {
+            rows = await this.candidatosEnBBox(tenantId, geometry, 'votantes');
+        }
+        const items = rows
+            .filter((r) => {
+            if (seccion)
+                return true;
+            const p = this.puntoDesde(r.coordenadas);
+            return p ? this.puntoEnPoligono(p, geometry) : false;
+        })
+            .slice(0, limit)
+            .map((r) => ({
+            id: r.id,
+            nombre: r.nombre,
+            telefono: r.telefono,
+            seccion_electoral: r.seccion_electoral,
+            colonia: r.colonia,
+            municipio: r.municipio,
+            nivel_apoyo: r.nivel_apoyo,
+            coordenadas: r.coordenadas,
+        }));
+        return { count: rows.length, items };
+    }
+    async contarYListarLideres(tenantId, geometry, seccion, limit = 10) {
+        let rows = [];
+        if (seccion) {
+            rows = await this.prisma.lider.findMany({
+                where: { tenant_id: tenantId, activo: true, votante: { seccion_electoral: seccion } },
+                include: { votante: true },
+                orderBy: { created_at: 'desc' },
+            });
+        }
+        else {
+            rows = await this.candidatosEnBBox(tenantId, geometry, 'lideres');
+        }
+        const items = rows
+            .filter((r) => {
+            if (seccion)
+                return true;
+            const p = this.puntoDesde(r.votante?.coordenadas || r.coordenadas);
+            return p ? this.puntoEnPoligono(p, geometry) : false;
+        })
+            .slice(0, limit)
+            .map((r) => ({
+            id: r.id,
+            nombre: r.votante?.nombre || r.nombre,
+            telefono: r.votante?.telefono,
+            seccion_electoral: r.votante?.seccion_electoral,
+            colonia: r.votante?.colonia,
+            score: r.score,
+            coordenadas: r.votante?.coordenadas || r.coordenadas,
+        }));
+        return { count: rows.length, items };
+    }
+    async contarYListarApoyos(tenantId, geometry, seccion, limit = 10) {
+        let rows = [];
+        if (seccion) {
+            rows = await this.prisma.apoyo.findMany({
+                where: { tenant_id: tenantId, votante: { seccion_electoral: seccion } },
+                include: { votante: true },
+                orderBy: { fecha_entrega: 'desc' },
+            });
+        }
+        else {
+            rows = await this.candidatosEnBBox(tenantId, geometry, 'apoyos');
+        }
+        const items = rows
+            .filter((r) => {
+            if (seccion)
+                return true;
+            const p = this.puntoDesde(r.coordenadas || r.votante?.coordenadas);
+            return p ? this.puntoEnPoligono(p, geometry) : false;
+        })
+            .slice(0, limit)
+            .map((r) => ({
+            id: r.id,
+            tipo_apoyo: r.tipo_apoyo,
+            cantidad: r.cantidad,
+            fecha_entrega: r.fecha_entrega,
+            votante_nombre: r.votante?.nombre,
+            coordenadas: r.coordenadas || r.votante?.coordenadas,
+        }));
+        return { count: rows.length, items };
+    }
+    async contarEventos(tenantId, geometry, seccion, limit = 10) {
+        let rows = [];
+        if (seccion) {
+            const zonas = await this.prisma.zona.findMany({
+                where: { tenant_id: tenantId, secciones: { has: seccion } },
+                select: { id: true },
+            });
+            const zonaIds = zonas.map((z) => z.id);
+            rows = await this.prisma.evento.findMany({
+                where: { tenant_id: tenantId, zona_id: { in: zonaIds } },
+                orderBy: { fecha_inicio: 'desc' },
+            });
+        }
+        else {
+            rows = await this.candidatosEnBBox(tenantId, geometry, 'eventos');
+            rows = rows.filter((r) => {
+                const p = this.puntoDesde(r.coordenadas);
+                return p ? this.puntoEnPoligono(p, geometry) : false;
+            });
+        }
+        const items = rows.slice(0, limit).map((r) => ({
+            id: r.id,
+            nombre: r.nombre,
+            direccion: r.direccion,
+            fecha_inicio: r.fecha_inicio,
+            status: r.status,
+        }));
+        return { count: rows.length, items };
+    }
+    async contarPeticiones(tenantId, geometry, seccion, limit = 10) {
+        let rows = [];
+        if (seccion) {
+            rows = await this.prisma.peticion.findMany({
+                where: { tenant_id: tenantId, votante: { seccion_electoral: seccion } },
+                orderBy: { created_at: 'desc' },
+                include: { votante: { select: { nombre: true } } },
+            });
+        }
+        else {
+            rows = await this.candidatosEnBBox(tenantId, geometry, 'peticiones');
+            rows = rows.filter((r) => {
+                const p = this.puntoDesde(r.coordenadas || r.votante?.coordenadas);
+                return p ? this.puntoEnPoligono(p, geometry) : false;
+            });
+        }
+        const items = rows.slice(0, limit).map((r) => ({
+            id: r.id,
+            titulo: r.titulo,
+            categoria: r.categoria,
+            prioridad: r.prioridad,
+            estatus: r.estatus,
+            votante_nombre: r.votante?.nombre || r.votante_nombre,
+        }));
+        return { count: rows.length, items };
+    }
+    async candidatosEnBBox(tenantId, geometry, entidad) {
+        const [minLng, minLat, maxLng, maxLat] = this.bboxFromGeometry(geometry);
+        const tabla = {
+            votantes: 'votantes',
+            lideres: 'lideres',
+            apoyos: 'apoyos',
+            eventos: 'eventos',
+            peticiones: 'peticiones',
+        }[entidad];
+        const includeVotante = entidad === 'lideres' || entidad === 'apoyos' || entidad === 'peticiones';
+        const rawSelect = entidad === 'lideres'
+            ? `l.*, v.nombre as votante_nombre, v.telefono as votante_telefono, v.seccion_electoral as votante_seccion, v.colonia as votante_colonia, v.coordenadas as votante_coordenadas, v.municipio as votante_municipio`
+            : entidad === 'apoyos' || entidad === 'peticiones'
+                ? `${tabla}.*, v.nombre as votante_nombre, v.coordenadas as votante_coordenadas`
+                : `${tabla}.*`;
+        const join = includeVotante
+            ? `LEFT JOIN votantes v ON v.id = ${tabla}.votante_id AND v.tenant_id = ${tabla}.tenant_id`
+            : '';
+        const coordCampo = includeVotante
+            ? `COALESCE(${tabla}.coordenadas, v.coordenadas)`
+            : `${tabla}.coordenadas`;
+        const rows = await this.prisma.$queryRawUnsafe(`SELECT ${rawSelect}
+       FROM ${tabla}
+       ${join}
+       WHERE ${tabla}.tenant_id = $1::uuid
+         AND ${coordCampo} IS NOT NULL
+         AND (${coordCampo}->>'lat')::float BETWEEN $2 AND $3
+         AND (${coordCampo}->>'lng')::float BETWEEN $4 AND $5`, tenantId, minLat, maxLat, minLng, maxLng);
+        return rows;
+    }
+    puntoEnPoligono(coords, geometry) {
+        try {
+            return (0, boolean_point_in_polygon_1.default)({ type: 'Point', coordinates: coords }, geometry);
+        }
+        catch {
+            return false;
+        }
+    }
+    bboxFromGeometry(geometry) {
+        if (!geometry || !geometry.coordinates)
+            return [-180, -90, 180, 90];
+        let minLng = Infinity;
+        let minLat = Infinity;
+        let maxLng = -Infinity;
+        let maxLat = -Infinity;
+        const visit = (coord) => {
+            if (Array.isArray(coord) && coord.length >= 2 && typeof coord[0] === 'number' && typeof coord[1] === 'number') {
+                const [lng, lat] = coord;
+                minLng = Math.min(minLng, lng);
+                minLat = Math.min(minLat, lat);
+                maxLng = Math.max(maxLng, lng);
+                maxLat = Math.max(maxLat, lat);
+            }
+        };
+        const walk = (node) => {
+            if (Array.isArray(node)) {
+                if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+                    visit(node);
+                }
+                else {
+                    node.forEach(walk);
+                }
+            }
+        };
+        walk(geometry.coordinates);
+        if (minLng === Infinity)
+            return [-180, -90, 180, 90];
+        return [minLng, minLat, maxLng, maxLat];
+    }
 };
 exports.MapasService = MapasService;
 exports.MapasService = MapasService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __param(1, (0, common_1.Optional)()),
+    __param(2, (0, common_1.Optional)()),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        inegi_service_1.InegiService,
+        nominatim_service_1.NominatimService])
 ], MapasService);
 //# sourceMappingURL=mapas.service.js.map

@@ -1,6 +1,8 @@
 import { MapasService } from './mapas.service';
 import { GisParserService } from './gis-parser.service';
 import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
+import { BuscarGlobalDto } from './dto/buscar-global.dto';
+import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
 export declare class MapasController {
     private readonly mapasService;
     private readonly gisParser;
@@ -31,9 +33,9 @@ export declare class MapasController {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
         })[];
     }>;
     findOneCapa(id: string, req: any): Promise<{
@@ -52,9 +54,9 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     createCapa(data: any, req: any): Promise<{
         creador: {
@@ -72,9 +74,9 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     updateCapa(id: string, data: any, req: any): Promise<{
         creador: {
@@ -92,9 +94,9 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     removeCapa(id: string, req: any): Promise<{
         id: string;
@@ -107,9 +109,9 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     geojson(query: any, req: any): Promise<Record<string, any>>;
     findAllSeccionesINE(estadoId: string, municipioId: string, req: any): Promise<{
@@ -143,11 +145,44 @@ export declare class MapasController {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
         };
         total_secciones: number;
+    }>;
+    buscarGlobal(dto: BuscarGlobalDto, req: any): Promise<{
+        resultados: any[];
+    }>;
+    detalleTerritorial(dto: DetalleTerritorialDto, req: any): Promise<{
+        tipo: string;
+        id: string;
+        nombre: string;
+        geometry: any;
+        bbox: [number, number, number, number];
+        datos_oficiales: any;
+        resumen: {
+            votantes: {
+                count: number;
+                items: any[];
+            };
+            lideres: {
+                count: number;
+                items: any[];
+            };
+            apoyos: {
+                count: number;
+                items: any[];
+            };
+            eventos: {
+                count: number;
+                items: any[];
+            };
+            peticiones: {
+                count: number;
+                items: any[];
+            };
+        };
     }>;
     seedDemo(req: any): Promise<{
         creadas: number;
@@ -172,9 +207,9 @@ export declare class MapasController {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
         };
         features_count: any;
     }>;

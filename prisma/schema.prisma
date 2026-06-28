@@ -50,6 +50,10 @@ model Tenant {
   resultadosHistoricos  ResultadoHistorico[]
   peticiones            Peticion[]
   perfilCandidato       PerfilCandidato?
+  encuestas             Encuesta[]
+  respuestasEncuesta    RespuestaEncuesta[]
+  casillas              Casilla[]
+  metasVotacion         MetaVotacion[]
   @@map("tenants")
 }
 
@@ -115,6 +119,9 @@ model Usuario {
   boletinesCreados Boletin[] @relation("BoletinCreadoPor")
   capasMapa        CapaMapa[] @relation("CapaMapaCreadaPor")
   peticiones       Peticion[]
+  encuestasCreadas Encuesta[] @relation("EncuestaCreadoPor")
+  respuestasRegistradas RespuestaEncuesta[] @relation("RespuestaRegistradaPor")
+  casillasResponsable Casilla[]
 
   @@index([tenant_id, rol])
   @@index([email])
@@ -138,6 +145,7 @@ enum CapaMapaTipo {
   recorridos
   custom
   inegi
+  colonia
 }
 
 enum CapaMapaOrigen {
@@ -153,6 +161,7 @@ enum UserRole {
   coord_zona
   brigadista
   cm
+  superadmin
 }
 
 // ==========================================
@@ -181,6 +190,7 @@ model Zona {
   usuarios        Usuario[]
   eventos         Evento[]
   lider           Lider?   @relation(fields: [lider_id], references: [id])
+  metasVotacion   MetaVotacion[]
 
   @@index([tenant_id])
   @@index([tenant_id, tipo])
@@ -251,6 +261,7 @@ model Votante {
   mensajes                Mensaje[]
   llamadasVapi            LlamadaVapi[]
   peticiones              Peticion[]
+  respuestasEncuesta      RespuestaEncuesta[]
 
   @@index([tenant_id, seccion_electoral])
   @@index([tenant_id, nivel_apoyo])
@@ -685,4 +696,116 @@ model ResultadoHistorico {
   @@index([tenant_id, anio])
   @@index([tenant_id, municipio_id])
   @@map("resultados_historicos")
+}
+
+// ==========================================
+// ENCUESTAS DE OPINIÓN CIUDADANA
+// ==========================================
+enum EstatusEncuesta {
+  borrador
+  activa
+  cerrada
+}
+
+model Encuesta {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenant_id   String          @db.Uuid
+  titulo      String
+  descripcion String?
+  status      EstatusEncuesta @default(borrador)
+  preguntas   Json?           // [{ id, texto, tipo, opciones[], requerida }]
+  created_by  String          @db.Uuid
+  created_at  DateTime        @default(now())
+  updated_at  DateTime        @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  creador     Usuario         @relation("EncuestaCreadoPor", fields: [created_by], references: [id], onDelete: Cascade)
+  respuestas  RespuestaEncuesta[]
+
+  @@index([tenant_id, status])
+  @@map("encuestas")
+}
+
+model RespuestaEncuesta {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_id      String   @db.Uuid
+  encuesta_id    String   @db.Uuid
+  votante_id     String?  @db.Uuid
+  votante_nombre String?
+  respuestas     Json     // [{ pregunta_id, valores: [] }]
+  coordenadas    Json?
+  created_by     String?  @db.Uuid
+  created_at     DateTime @default(now())
+
+  encuesta       Encuesta @relation(fields: [encuesta_id], references: [id], onDelete: Cascade)
+  tenant         Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  votante        Votante? @relation(fields: [votante_id], references: [id], onDelete: SetNull)
+  creador        Usuario? @relation("RespuestaRegistradaPor", fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, encuesta_id])
+  @@index([votante_id])
+  @@map("respuestas_encuesta")
+}
+
+// ==========================================
+// CASILLAS / PUESTOS DE VOTACIÓN
+// ==========================================
+enum TipoCasilla {
+  basica
+  contigua
+  especial
+  extranjero
+}
+
+model Casilla {
+  id                 String      @id @default(uuid()) @db.Uuid
+  tenant_id          String      @db.Uuid
+  seccion            String      @db.VarChar(4)
+  tipo               TipoCasilla @default(basica)
+  numero             String?     // número de casilla adicional
+  ubicacion          String?     // nombre del lugar
+  direccion          String?
+  coordenadas        Json?       // { lat, lng }
+  referencia         String?
+  mesa_directiva     String?
+  horario_apertura   DateTime?
+  horario_cierre     DateTime?
+  electores_esperados Int?
+  status             String      @default("sin_reportar") // sin_reportar, abierta, cerrada, incidencia
+  incidencia         String?
+  responsable_id     String?     @db.Uuid
+  notas              String?
+  created_at         DateTime    @default(now())
+  updated_at         DateTime    @updatedAt
+
+  tenant             Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  responsable        Usuario?    @relation(fields: [responsable_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, seccion])
+  @@index([tenant_id, status])
+  @@map("casillas")
+}
+
+// ==========================================
+// METAS Y PROYECCIÓN DE VOTACIÓN
+// ==========================================
+model MetaVotacion {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenant_id          String   @db.Uuid
+  seccion            String?  @db.VarChar(4)
+  zona_id            String?  @db.Uuid
+  proceso            String   // ej. 2024, 2027
+  meta_votos         Int
+  meta_lista_nominal Int?
+  meta_participacion Float?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  zona               Zona?    @relation(fields: [zona_id], references: [id], onDelete: SetNull)
+
+  @@unique([tenant_id, seccion, zona_id, proceso])
+  @@index([tenant_id, seccion])
+  @@index([tenant_id, zona_id])
+  @@map("metas_votacion")
 }

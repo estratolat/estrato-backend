@@ -98,6 +98,154 @@ let InegiService = InegiService_1 = class InegiService {
                 throw new common_1.BadRequestException('Tipo de capa INEGI no soportado');
         }
     }
+    async buscar(tipo, query, ent, mun, loc) {
+        if (!query || query.trim().length < 2) {
+            throw new common_1.BadRequestException('La búsqueda debe tener al menos 2 caracteres');
+        }
+        const termino = query.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const resultados = [];
+        switch (tipo) {
+            case 'estados': {
+                const geo = await this.descargar('estados');
+                resultados.push(...this.filtrarFeatures(geo, termino, 'estados'));
+                break;
+            }
+            case 'municipios': {
+                if (!ent) {
+                    throw new common_1.BadRequestException('Para buscar municipios se requiere una clave de estado (2 dígitos)');
+                }
+                const geo = await this.descargar('municipios', ent);
+                resultados.push(...this.filtrarFeatures(geo, termino, 'municipios', ent));
+                break;
+            }
+            case 'localidades': {
+                if (!ent || !mun) {
+                    throw new common_1.BadRequestException('Para buscar localidades se requiere estado y municipio');
+                }
+                const geo = await this.descargar('localidades', `${ent}${mun}`);
+                resultados.push(...this.filtrarFeatures(geo, termino, 'localidades', ent, mun));
+                break;
+            }
+            case 'ageb': {
+                if (!ent || !mun) {
+                    throw new common_1.BadRequestException('Para buscar AGEB se requiere estado y municipio');
+                }
+                const geo = await this.descargar('ageb', `${ent}${mun}`);
+                resultados.push(...this.filtrarFeatures(geo, termino, 'ageb', ent, mun));
+                break;
+            }
+            case 'manzanas': {
+                if (!ent || !mun || !loc) {
+                    throw new common_1.BadRequestException('Para buscar manzanas se requiere estado, municipio y localidad');
+                }
+                const geo = await this.descargar('manzanas', `${ent}${mun}${loc}`);
+                resultados.push(...this.filtrarFeatures(geo, termino, 'manzanas', ent, mun, loc));
+                break;
+            }
+            case 'vialidades': {
+                if (!ent || !mun) {
+                    throw new common_1.BadRequestException('Para buscar vialidades se requiere estado y municipio');
+                }
+                const geo = await this.descargar('vialidades', `${ent}${mun}`);
+                resultados.push(...this.filtrarFeatures(geo, termino, 'vialidades', ent, mun));
+                break;
+            }
+            default:
+                throw new common_1.BadRequestException(`Búsqueda no soportada para el tipo: ${tipo}`);
+        }
+        return resultados.slice(0, 50);
+    }
+    async obtenerPorClave(tipo, clave, ent, mun, loc) {
+        let geo;
+        switch (tipo) {
+            case 'estados':
+                geo = await this.descargar('estados', clave);
+                break;
+            case 'municipios':
+                if (!ent)
+                    throw new common_1.BadRequestException('Se requiere estado para importar municipio');
+                geo = await this.descargar('municipios', clave);
+                break;
+            case 'localidades':
+                if (!ent || !mun)
+                    throw new common_1.BadRequestException('Se requiere estado y municipio para importar localidad');
+                geo = await this.descargar('localidades', `${ent}${mun}`);
+                break;
+            case 'ageb':
+                if (!ent || !mun)
+                    throw new common_1.BadRequestException('Se requiere estado y municipio para importar AGEB');
+                geo = await this.descargar('ageb', `${ent}${mun}`);
+                break;
+            case 'manzanas':
+                if (!ent || !mun || !loc)
+                    throw new common_1.BadRequestException('Se requiere estado, municipio y localidad para importar manzana');
+                geo = await this.descargar('manzanas', `${ent}${mun}${loc}`);
+                break;
+            case 'vialidades':
+                if (!ent || !mun)
+                    throw new common_1.BadRequestException('Se requiere estado y municipio para importar vialidades');
+                geo = await this.descargar('vialidades', `${ent}${mun}`);
+                break;
+            default:
+                throw new common_1.BadRequestException('Tipo no soportado');
+        }
+        const features = geo?.features || [];
+        const claveLimpia = String(clave).trim();
+        const claveLimpiaUpper = claveLimpia.toUpperCase();
+        const claveLimpiaLower = claveLimpia.toLowerCase();
+        const feature = features.find((f) => {
+            const p = f.properties || {};
+            const cve = String(p.cvegeo || p.CVEGEO || p.cve_ent || p.CVE_ENT || p.cve_mun || p.CVE_MUN || p.cve_loc || p.CVE_LOC || p.cve_ageb || p.CVE_AGEB || p.cve_mza || p.CVE_MZA || '').trim();
+            const cveUpper = cve.toUpperCase();
+            const cveLower = cve.toLowerCase();
+            return (cve === claveLimpia ||
+                cveUpper === claveLimpiaUpper ||
+                cveLower === claveLimpiaLower ||
+                cveUpper.endsWith(claveLimpiaUpper) ||
+                claveLimpiaUpper.endsWith(cveUpper));
+        });
+        if (!feature) {
+            throw new common_1.BadRequestException(`No se encontró ${tipo} con clave ${clave}`);
+        }
+        return {
+            type: 'FeatureCollection',
+            features: [feature],
+        };
+    }
+    filtrarFeatures(geo, termino, tipo, ent, mun, loc) {
+        const features = geo?.features || [];
+        return features
+            .filter((f) => {
+            const p = f.properties || {};
+            const nombre = String(p.nom_loc || p.NOM_LOC ||
+                p.nomgeo || p.NOMGEO ||
+                p.NOMBRE || p.nombre ||
+                p.nom_ageb || p.NOM_AGEB ||
+                p.nom_vial || p.NOM_VIAL ||
+                '').toLowerCase();
+            const normalizado = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '');
+            return normalizado.includes(termino) || nombre.includes(termino);
+        })
+            .map((f) => {
+            const p = f.properties || {};
+            const clave = String(p.cvegeo || p.CVEGEO || p.cve_ent || p.CVE_ENT || p.cve_mun || p.CVE_MUN || p.cve_loc || p.CVE_LOC || p.cve_ageb || p.CVE_AGEB || p.cve_mza || p.CVE_MZA || '');
+            const nombre = p.nom_loc || p.NOM_LOC ||
+                p.nomgeo || p.NOMGEO ||
+                p.NOMBRE || p.nombre ||
+                p.nom_ageb || p.NOM_AGEB ||
+                p.nom_vial || p.NOM_VIAL ||
+                `Sin nombre (${clave})`;
+            return {
+                clave,
+                nombre,
+                tipo,
+                entidad: ent,
+                municipio: mun,
+                localidad: loc,
+                feature: f,
+            };
+        });
+    }
     limpiarClave(clave) {
         return (clave || '').replace(/\D/g, '');
     }

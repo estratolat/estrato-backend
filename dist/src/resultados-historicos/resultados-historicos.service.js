@@ -77,7 +77,13 @@ let ResultadosHistoricosService = class ResultadosHistoricosService {
         for (let i = 0; i < normalizado.length; i++) {
             const item = normalizado[i];
             if ('error' in item) {
+                if (item.error === 'OMITIDO_MESA') {
+                    continue;
+                }
                 errores.push({ fila: i + 2, error: item.error });
+                continue;
+            }
+            if ((item.votos_totales || 0) === 0 && (item.votos_ganador || 0) === 0) {
                 continue;
             }
             try {
@@ -162,6 +168,13 @@ let ResultadosHistoricosService = class ResultadosHistoricosService {
     }
     normalizarFila(row, index, defaults) {
         try {
+            const tieneFormatoSinaloa = this.tieneColumna(row, ['SECCION', 'seccion']) &&
+                (this.tieneColumna(row, ['MUNICIPIO', 'municipio', 'MUNICIPIO_LOCAL']) ||
+                    this.tieneColumna(row, ['ID_MUNICIPIO', 'id_municipio', 'ID_MUNICIPIO_LOCAL']) ||
+                    this.tieneColumna(row, ['TOTAL_VOTOS', 'TOTAL_VOTOS_ASENTADO', 'VOTOS_VALIDOS']));
+            if (tieneFormatoSinaloa) {
+                return this.normalizarFilaSinaloa(row, defaults);
+            }
             const seccionRaw = this.extraer(row, ['seccion', 'SECCION', 'secc', 'SECC', 'sección']);
             const anioRaw = this.extraer(row, ['anio', 'AÑO', 'ano', 'year', 'ANIO']);
             const partidoGanadorRaw = this.extraer(row, ['partido_ganador', 'GANADOR', 'ganador', 'partido']);
@@ -171,19 +184,11 @@ let ResultadosHistoricosService = class ResultadosHistoricosService {
                 return { error: 'Falta columna de año y no hay año por defecto' };
             if (!partidoGanadorRaw)
                 return { error: 'Falta columna de partido ganador' };
-            const seccion = String(seccionRaw).padStart(4, '0').slice(0, 4);
+            const seccion = this.formatearSeccion(seccionRaw);
             const anio = defaults.anio || Number(anioRaw);
-            const estado_id = this.parsearNumero(this.extraer(row, ['estado_id', 'ESTADO_ID', 'id_estado', 'ESTADO'])) || defaults.estado_id;
-            const municipio_id = this.parsearNumero(this.extraer(row, ['municipio_id', 'MUNICIPIO_ID', 'id_municipio', 'MUNICIPIO'])) || defaults.municipio_id;
+            const estado_id = this.parsearNumero(this.extraer(row, ['estado_id', 'ESTADO_ID', 'id_estado', 'ID_ENTIDAD'])) || defaults.estado_id;
+            const municipio_id = this.parsearNumero(this.extraer(row, ['municipio_id', 'MUNICIPIO_ID', 'id_municipio', 'ID_MUNICIPIO'])) || defaults.municipio_id;
             const partido_ganador = String(partidoGanadorRaw).toUpperCase().trim();
-            const desglose = {};
-            for (const [key, value] of Object.entries(row)) {
-                const upper = key.toUpperCase();
-                const partidos = ['PAN', 'PRI', 'PRD', 'MORENA', 'MC', 'PVEM', 'PT', 'PANAL', 'RSP', 'FXM', 'NAZIONAL', 'NOVA', 'QM', 'SOLIDARIDAD', 'SUMA', 'EPS'];
-                if (partidos.includes(upper) && value != null && value !== '') {
-                    desglose[upper] = Number(value) || 0;
-                }
-            }
             return {
                 seccion,
                 anio,
@@ -191,15 +196,86 @@ let ResultadosHistoricosService = class ResultadosHistoricosService {
                 municipio_id,
                 partido_ganador,
                 votos_ganador: this.parsearNumero(this.extraer(row, ['votos_ganador', 'VOTOS_GANADOR', 'votos_primer_lugar'])),
-                votos_totales: this.parsearNumero(this.extraer(row, ['votos_totales', 'VOTOS_TOTALES', 'total_votos'])),
-                votos_nulos: this.parsearNumero(this.extraer(row, ['votos_nulos', 'VOTOS_NULOS', 'nulos'])),
-                participacion_pct: this.parsearFloat(this.extraer(row, ['participacion_pct', 'PARTICIPACION', 'participacion', 'participacion_%'])),
-                desglose_partidos: Object.keys(desglose).length > 0 ? desglose : undefined,
+                votos_totales: this.parsearNumero(this.extraer(row, ['votos_totales', 'VOTOS_TOTALES', 'total_votos', 'TOTAL_VOTOS_ASENTADO', 'TOTAL_VOTOS'])),
+                votos_nulos: this.parsearNumero(this.extraer(row, ['votos_nulos', 'VOTOS_NULOS', 'nulos', 'NULOS'])),
+                participacion_pct: this.parsearFloat(this.extraer(row, ['participacion_pct', 'PARTICIPACION', 'participacion', 'participacion_%', 'PARTICIPACION_PCT'])),
+                desglose_partidos: this.extraerDesglose(row),
             };
         }
         catch (err) {
             return { error: err.message || 'Error desconocido' };
         }
+    }
+    normalizarFilaSinaloa(row, defaults) {
+        const seccionRaw = this.extraer(row, ['SECCION', 'seccion']);
+        if (!seccionRaw)
+            return { error: 'Falta columna de sección' };
+        if (!defaults.anio)
+            return { error: 'Falta año de la elección (selecciona un año al importar)' };
+        const seccionLimpia = String(seccionRaw).trim().toUpperCase();
+        if (seccionLimpia.startsWith('MESA')) {
+            return { error: 'OMITIDO_MESA' };
+        }
+        const seccion = this.formatearSeccion(seccionRaw);
+        const anio = defaults.anio;
+        const estado_id = this.parsearNumero(this.extraer(row, ['ID_ENTIDAD', 'id_entidad', 'ID_ESTADO', 'estado_id', 'ESTADO_ID'])) || defaults.estado_id;
+        const municipio_id = this.parsearNumero(this.extraer(row, ['ID_MUNICIPIO', 'id_municipio', 'ID_MUNICIPIO_LOCAL', 'MUNICIPIO_ID', 'municipio_id'])) || defaults.municipio_id;
+        const desglose = this.extraerDesglose(row);
+        const candidatos = Object.entries(desglose).filter(([k]) => k !== 'NULOS' && k !== 'NO_REGISTRADAS' && k !== 'VN' && k !== 'VCN');
+        let partido_ganador = 'OTRO';
+        let votos_ganador = 0;
+        if (candidatos.length > 0) {
+            const [ganador, votos] = candidatos.sort((a, b) => b[1] - a[1])[0];
+            partido_ganador = ganador;
+            votos_ganador = votos;
+        }
+        const votos_totales = this.parsearNumero(this.extraer(row, ['TOTAL_VOTOS_ASENTADO', 'total_votos_asentado', 'VOTOS_VALIDOS', 'votos_validos', 'TOTAL_VOTOS', 'votos_totales']));
+        const votos_nulos = this.parsearNumero(this.extraer(row, ['NULOS', 'nulos', 'VOTOS_NULOS', 'VN']));
+        const participacion_pct = this.parsearFloat(this.extraer(row, ['PARTICIPACION_PCT', 'participacion_pct', 'PARTICIPACION', 'participacion', 'PORCENTAJE_GANADOR']));
+        return {
+            seccion,
+            anio,
+            estado_id,
+            municipio_id,
+            partido_ganador,
+            votos_ganador: votos_ganador || undefined,
+            votos_totales: votos_totales || undefined,
+            votos_nulos: votos_nulos || undefined,
+            participacion_pct: participacion_pct || undefined,
+            desglose_partidos: Object.keys(desglose).length > 0 ? desglose : undefined,
+        };
+    }
+    extraerDesglose(row) {
+        const desglose = {};
+        const partidosConocidos = [
+            'PAN', 'PRI', 'PRD', 'PT', 'PVEM', 'MC', 'PAS', 'MORENA', 'PES',
+            'MAG', 'JSLS', 'VMSA',
+            'CAND_IND_JSLS', 'CAND_IND_VMSA', 'CAND_IND_MAG',
+            'C_PAN_PRI_PRD_PAS', 'C_PAN_PRI_PRD', 'C_PAN_PRI_PAS', 'C_PAN_PRD_PAS',
+            'C_PRI_PRD_PAS', 'C_PAN_PRI', 'C_PAN_PRD', 'C_PAN_PAS', 'C_PRI_PRD',
+            'C_PRI_PAS', 'C_PRD_PAS', 'CC_PVEM_MORENA',
+            'NO_REGISTRADAS', 'NULOS', 'VN', 'VCN',
+            'PANAL', 'RSP', 'FXM', 'NAZIONAL', 'NOVA', 'QM', 'SOLIDARIDAD', 'SUMA', 'EPS',
+        ];
+        for (const [key, value] of Object.entries(row)) {
+            const upper = key.toUpperCase().trim();
+            if (upper.startsWith('PCT_') || upper.startsWith('%'))
+                continue;
+            if (partidosConocidos.includes(upper) && value != null && value !== '') {
+                const num = Number(String(value).replace(/,/g, ''));
+                if (!isNaN(num)) {
+                    desglose[upper] = num;
+                }
+            }
+        }
+        return desglose;
+    }
+    formatearSeccion(valor) {
+        const num = String(valor).replace(/\D/g, '');
+        return num.padStart(4, '0').slice(0, 4);
+    }
+    tieneColumna(row, nombres) {
+        return nombres.some((n) => row[n] !== undefined);
     }
     extraer(row, nombres) {
         for (const nombre of nombres) {
@@ -210,7 +286,7 @@ let ResultadosHistoricosService = class ResultadosHistoricosService {
         return undefined;
     }
     parsearNumero(value) {
-        if (!value)
+        if (!value || value.trim() === '\\N')
             return undefined;
         const limpio = value.replace(/,/g, '').replace(/%/g, '').trim();
         const num = Number(limpio);

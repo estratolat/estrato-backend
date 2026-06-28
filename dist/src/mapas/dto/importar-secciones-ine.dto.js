@@ -31,10 +31,12 @@ __decorate([
     __metadata("design:type", String)
 ], ImportarSeccionesIneDto.prototype, "estado", void 0);
 __decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumberString)(),
     __metadata("design:type", String)
 ], ImportarSeccionesIneDto.prototype, "municipio_id", void 0);
 __decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ImportarSeccionesIneDto.prototype, "municipio", void 0);
@@ -43,4 +45,9 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ImportarSeccionesIneDto.prototype, "anio", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ImportarSeccionesIneDto.prototype, "shapefile_hint", void 0);
 //# sourceMappingURL=importar-secciones-ine.dto.js.map

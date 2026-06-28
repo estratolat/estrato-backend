@@ -1,10 +1,14 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DOMParser } from '@xmldom/xmldom';
-import * as AdmZip from 'adm-zip';
+import AdmZip from 'adm-zip';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as shapefile from 'shapefile';
+import proj4 from 'proj4';
 
-// Estas librerías son ESM; las cargamos con dynamic import para evitar ERR_REQUIRE_ESM
+// toGeoJSON es ESM; lo cargamos con dynamic import
 let toGeoJSON: any = null;
-let shpjs: any = null;
 
 async function cargarToGeoJSON() {
   if (!toGeoJSON) {
@@ -12,14 +16,6 @@ async function cargarToGeoJSON() {
     toGeoJSON = mod;
   }
   return toGeoJSON;
-}
-
-async function cargarShpjs() {
-  if (!shpjs) {
-    const mod = await import('shpjs');
-    shpjs = mod.default || mod;
-  }
-  return shpjs;
 }
 
 @Injectable()
@@ -33,7 +29,7 @@ export class GisParserService {
     return 'desconocido';
   }
 
-  async parse(archivo: Express.Multer.File, tipoArchivo?: string): Promise<any> {
+  async parse(archivo: Express.Multer.File, tipoArchivo?: string, shapefileHint?: string): Promise<any> {
     const buffer = archivo.buffer;
     const originalName = archivo.originalname.toLowerCase();
     const tipo = tipoArchivo || this.detectarTipo(originalName);
@@ -46,7 +42,7 @@ export class GisParserService {
         return this.parseGeoJson(buffer);
       case 'shapefile':
       case 'shp':
-        return this.parseShapefile(buffer);
+        return this.parseShapefile(buffer, shapefileHint);
       case 'gpx':
         return this.parseGpx(buffer);
       default:
@@ -78,38 +74,127 @@ export class GisParserService {
     }
   }
 
-  private async parseShapefile(buffer: Buffer): Promise<any> {
-    let shp: any;
+  private async parseShapefile(buffer: Buffer, shapefileHint?: string): Promise<any> {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'estrato-shapefile-'));
     try {
-      shp = await cargarShpjs();
-      console.log('[parseShapefile] intentando parsear buffer directo, size:', buffer.length);
-      const geojson = await shp(buffer);
-      console.log('[parseShapefile] parse directo ok, features:', geojson?.features?.length);
-      return this.normalizarGeoJSON(geojson);
-    } catch (err) {
-      console.error('[parseShapefile] Error parseando shapefile directo:', (err as any)?.message, (err as any)?.stack);
+      const isZip = buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4B;
+      let shpPath: string;
+      let dbfPath: string | undefined;
 
-      // Fallback: extraer .shp del zip
-      try {
-        console.log('[parseShapefile] fallback: extrayendo .shp del zip');
-        const zip = new (AdmZip as any)(buffer);
-        const entries = zip.getEntries();
-        console.log('[parseShapefile] entries:', entries.map((e: any) => e.entryName));
-        const shpEntry = entries.find((e: any) => e.entryName.toLowerCase().endsWith('.shp'));
-        if (!shpEntry) {
-          throw new BadRequestException('El zip no contiene un archivo .shp');
+      let prjString: string | undefined;
+      if (isZip) {
+        // Extraer el shapefile más relevante del zip
+        const extracted = this.extraerShapefileDeZipAPath(buffer, tmpDir, shapefileHint);
+        shpPath = extracted.shpPath;
+        dbfPath = extracted.dbfPath;
+        prjString = extracted.prjString;
+      } else {
+        // Buffer .shp suelto
+        shpPath = path.join(tmpDir, 'archivo.shp');
+        fs.writeFileSync(shpPath, buffer);
+      }
+
+      const source = await shapefile.open(shpPath, dbfPath, { encoding: 'utf-8' });
+      const features: any[] = [];
+      let row;
+      while ((row = await source.read()) && !row.done) {
+        features.push({
+          type: 'Feature',
+          geometry: row.value.geometry,
+          properties: row.value.properties || {},
+        });
+      }
+
+      if (prjString) {
+        const projDef = this.proyeccionDesdePrj(prjString);
+        if (projDef) {
+          console.log('[parseShapefile] reproyectando de', projDef, 'a WGS84');
+          features.forEach((f) => {
+            if (f.geometry) {
+              f.geometry = this.reproyectarGeometria(f.geometry, projDef);
+            }
+          });
         }
-        if (!shp) shp = await cargarShpjs();
-        const shpBuffer = shpEntry.getData();
-        console.log('[parseShapefile] .shp extraído, size:', shpBuffer.length);
-        const geojson = await shp(shpBuffer);
-        console.log('[parseShapefile] parse desde zip ok, features:', geojson?.features?.length);
-        return this.normalizarGeoJSON(geojson);
-      } catch (err2) {
-        console.error('[parseShapefile] Error parseando shapefile desde zip:', (err2 as any)?.message, (err2 as any)?.stack);
-        throw new BadRequestException(`No se pudo procesar el Shapefile: ${(err2 as any)?.message || 'verifica que sea .zip con .shp, .dbf y .shx'}`);
+      }
+
+      console.log('[parseShapefile] features leídas:', features.length);
+      return this.normalizarGeoJSON({ type: 'FeatureCollection', features });
+    } catch (err) {
+      console.error('[parseShapefile] Error parseando shapefile:', (err as any)?.message, (err as any)?.stack);
+      throw new BadRequestException(`No se pudo procesar el Shapefile: ${(err as any)?.message || 'verifica que sea .zip con .shp, .dbf y .shx'}`);
+    } finally {
+      // Limpieza best-effort del directorio temporal
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // Ignorar errores de limpieza
       }
     }
+  }
+
+  private extraerShapefileDeZipAPath(
+    buffer: Buffer,
+    tmpDir: string,
+    shapefileHint?: string,
+  ): { shpPath: string; dbfPath?: string; prjString?: string } {
+    const zip = new AdmZip(buffer);
+    const entries = zip.getEntries();
+    const shpEntries = entries.filter(
+      (e: any) => e.entryName.toLowerCase().endsWith('.shp') && !e.entryName.includes('__MACOSX/'),
+    );
+    if (shpEntries.length === 0) {
+      throw new BadRequestException('El zip no contiene archivos .shp');
+    }
+
+    console.log('[extraerShapefileDeZipAPath] shapefiles encontrados:', shpEntries.map((e: any) => e.entryName));
+
+    let shpEntry = shpEntries[0];
+    if (shpEntries.length > 1) {
+      const hint = (shapefileHint || '').toLowerCase().trim();
+      const keywords = hint ? hint.split(/[,;\s]+/).filter(Boolean) : [];
+      const seccionKeywords = ['seccion', 'secciones', 'secc', 'section'];
+
+      const score = (entry: any): number => {
+        const name = entry.entryName.toLowerCase().replace(/\.shp$/, '');
+        let s = 0;
+        keywords.forEach((k) => { if (name.includes(k)) s += 10; });
+        seccionKeywords.forEach((k) => { if (name.includes(k)) s += 5; });
+        const aux = ['adoquin', 'aeropuerto', 'autopista', 'brecha', 'cementerio', 'edificio',
+          'escuela', 'hospital', 'iglesia', 'mercado', 'puente', 'rio', 'rios', 'vialidad',
+          'vereda', 'colonia', 'localidad', 'manzana', 'municipio', 'distrito', 'entidad'];
+        aux.forEach((a) => { if (name.includes(a)) s -= 20; });
+        return s;
+      };
+
+      const sorted = [...shpEntries].sort((a: any, b: any) => score(b) - score(a));
+      shpEntry = sorted[0];
+      console.log('[extraerShapefileDeZipAPath] elegido:', shpEntry.entryName, 'score:', score(shpEntry));
+    }
+
+    const entryBaseName = shpEntry.entryName.replace(/\.shp$/i, '');
+    const baseName = path.basename(entryBaseName);
+    const exts = ['.shp', '.shx', '.dbf', '.prj', '.cpg', '.sbn', '.sbx'];
+    let dbfPath: string | undefined;
+    let prjString: string | undefined;
+
+    exts.forEach((ext) => {
+      const entryName = `${entryBaseName}${ext}`;
+      const entry = entries.find((e: any) => e.entryName.toLowerCase() === entryName.toLowerCase());
+      if (entry) {
+        const data = entry.getData();
+        const outPath = path.join(tmpDir, `${baseName}${ext}`);
+        fs.writeFileSync(outPath, data);
+        if (ext === '.dbf') dbfPath = outPath;
+        if (ext === '.prj') prjString = data.toString('utf-8');
+      }
+    });
+
+    const shpPath = path.join(tmpDir, `${baseName}.shp`);
+    if (!fs.existsSync(shpPath)) {
+      throw new BadRequestException('No se pudo extraer el archivo .shp seleccionado');
+    }
+
+    return { shpPath, dbfPath, prjString };
   }
 
   private async parseGpx(buffer: Buffer): Promise<any> {
@@ -157,5 +242,45 @@ export class GisParserService {
       geometry: feature.geometry,
       properties: feature.properties || {},
     };
+  }
+
+  private proyeccionDesdePrj(prjString: string): string | undefined {
+    // Buscar códigos EPSG de proyección UTM (326xx norte, 327xx sur)
+    const matches = [...prjString.matchAll(/AUTHORITY\["EPSG","(\d{4,5})"\]/g)];
+    for (const match of matches) {
+      const code = parseInt(match[1], 10);
+      if (code >= 32601 && code <= 32660) {
+        const zone = code - 32600;
+        return `+proj=utm +zone=${zone} +datum=WGS84 +units=m +no_defs`;
+      }
+      if (code >= 32701 && code <= 32760) {
+        const zone = code - 32700;
+        return `+proj=utm +zone=${zone} +south +datum=WGS84 +units=m +no_defs`;
+      }
+    }
+    // WGS 84 explícito
+    if (prjString.includes('EPSG"4326"') || prjString.includes('WGS_1984')) {
+      return undefined;
+    }
+    return undefined;
+  }
+
+  private reproyectarGeometria(geometry: any, projDef: string): any {
+    if (!geometry || !geometry.coordinates) return geometry;
+    return {
+      ...geometry,
+      coordinates: this.reproyectarNodo(geometry.coordinates, projDef),
+    };
+  }
+
+  private reproyectarNodo(node: any, projDef: string): any {
+    if (Array.isArray(node) && node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+      // proj4(source, dest, point) devuelve [lng, lat] cuando dest es WGS84
+      return proj4(projDef, proj4.WGS84, node);
+    }
+    if (Array.isArray(node)) {
+      return node.map((child) => this.reproyectarNodo(child, projDef));
+    }
+    return node;
   }
 }

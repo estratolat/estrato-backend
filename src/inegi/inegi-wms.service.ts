@@ -9,7 +9,8 @@ export type CapaInegiWms =
   | 'localidades'
   | 'ageb'
   | 'manzanas'
-  | 'vialidades';
+  | 'vialidades'
+  | 'geoelectorales';
 
 interface TileParams {
   capa: CapaInegiWms;
@@ -22,21 +23,24 @@ interface TileParams {
   styles?: string;
   cve?: string;
   transparent?: string;
+  indicador?: string;
 }
 
 @Injectable()
 export class InegiWmsService {
   private readonly logger = new Logger(InegiWmsService.name);
   private readonly endpoint = 'https://gaia.inegi.org.mx/NLB/mdm5.wms';
+  private readonly endpointTematico = 'https://gaia.inegi.org.mx/NLB/tunnel/wms/mdm6wms';
 
   // Nombres de capa en el WMS del INEGI según documentación y OSM layer index
-  private readonly layerNames: Record<CapaInegiWms, { layer: string; style: string; cqlField: string }> = {
+  private readonly layerNames: Record<CapaInegiWms, { layer: string; style: string; cqlField: string; tematico?: boolean; indicador?: string }> = {
     estados: { layer: 'Límite_geoestadístico_estatal', style: '', cqlField: 'CVE_ENT' },
     municipios: { layer: 'Límite_geoestadístico_municipal', style: '', cqlField: 'CVE_MUN' },
     localidades: { layer: 'Localidad_urbana_y_rural_amanzanada', style: '', cqlField: 'CVE_LOC' },
     ageb: { layer: 'AGEB_urbanas', style: '', cqlField: 'CVE_AGEB' },
     manzanas: { layer: 'Manzanas', style: '', cqlField: 'CVE_MZA' },
     vialidades: { layer: 'Vialidades', style: '', cqlField: '' },
+    geoelectorales: { layer: 'cgeoelectorales', style: '', cqlField: '', tematico: true, indicador: 'POBTOT' },
   };
 
   constructor(private http: HttpService) {}
@@ -47,6 +51,7 @@ export class InegiWmsService {
       throw new BadRequestException('Capa INEGI no soportada');
     }
 
+    const esTematico = config.tematico;
     const query = new URLSearchParams();
     query.set('Request', 'GetMap');
     query.set('Service', 'WMS');
@@ -61,34 +66,71 @@ export class InegiWmsService {
     query.set('HEIGHT', params.height || '256');
     query.set('TILED', 'true');
 
+    if (esTematico) {
+      // El WMS temático del MDM6 requiere mapa tematización y parámetros de indicador
+      query.set('map', '/opt/map/mdm60/tematizacion.map');
+      const indicador = params.indicador || config.indicador || 'POBTOT';
+      query.set('indicador', indicador);
+    }
+
     const cql = this.buildCql(config.cqlField, params.cve, params.capa);
     if (cql) {
       query.set('CQL_FILTER', cql);
     }
 
-    const url = `${this.endpoint}?${query.toString()}`;
+    const baseUrl = esTematico ? this.endpointTematico : this.endpoint;
+    const url = `${baseUrl}?${query.toString()}`;
     this.logger.debug(`Proxy INEGI WMS: ${url}`);
 
     try {
       const response = await lastValueFrom(
         this.http.get(url, {
           responseType: 'arraybuffer',
-          timeout: 15000,
+          timeout: 20000,
           headers: { Accept: 'image/png,image/*' },
         }),
       );
 
+      const rawContentType = response.headers['content-type'];
       const contentType =
-        typeof response.headers['content-type'] === 'string'
-          ? response.headers['content-type']
-          : 'image/png';
+        typeof rawContentType === 'string'
+          ? rawContentType
+          : Array.isArray(rawContentType)
+            ? rawContentType[0]
+            : 'image/png';
+
+      const data = Buffer.isBuffer(response.data)
+        ? response.data
+        : Buffer.from(response.data);
+
+      // Si INEGI devolvió un error en texto/XML, enviar tile PNG transparente para no romper el mapa
+      if (!contentType.startsWith('image/') || data.length < 100) {
+        this.logger.warn(`Respuesta INEGI no es imagen válida: ${contentType}, ${data.length} bytes. URL: ${url}`);
+        const transparentPng = this.transparentPng();
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.status(200).send(transparentPng);
+        return;
+      }
+
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=3600');
-      res.status(200).send(response.data);
+      res.status(200).send(data);
     } catch (err: any) {
       this.logger.error(`Error proxy INEGI WMS: ${err?.message}`, err?.response?.status, url);
-      throw new BadRequestException('No se pudo obtener la capa del INEGI');
+      const transparentPng = this.transparentPng();
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.status(200).send(transparentPng);
     }
+  }
+
+  private transparentPng(): Buffer {
+    // PNG transparente 1x1 píxel en base64
+    return Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
   }
 
   private buildCql(field: string, cve?: string, capa?: CapaInegiWms): string {
@@ -133,6 +175,15 @@ export class InegiWmsService {
         const mun = clean.slice(2, 5);
         const loc = clean.slice(5, 9);
         return `CVE_ENT='${ent}' AND CVE_MUN='${mun}' AND CVE_LOC='${loc}'`;
+      }
+      return '';
+    }
+
+    if (capa === 'geoelectorales') {
+      // La capa geoelectorales cubre todo el país; el cve puede filtrar por CVE_ENT si se proporciona
+      if (clean.length >= 2) {
+        const ent = clean.slice(0, 2);
+        return `CVE_ENT='${ent}'`;
       }
       return '';
     }
