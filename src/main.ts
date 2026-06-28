@@ -4,6 +4,7 @@ import { SwaggerModule, DocumentBuilder, OpenAPIObject } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 @Catch()
@@ -69,6 +70,8 @@ async function createApp() {
   // }));
   app.use(compression());
   app.use(cookieParser());
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // CORS — permitir localhost y cualquier deployment de Vercel del proyecto frontend
   const allowedOrigins = [

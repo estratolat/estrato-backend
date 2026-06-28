@@ -16,6 +16,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const compression_1 = __importDefault(require("compression"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
+const express_1 = require("express");
 const app_module_1 = require("./app.module");
 let GlobalExceptionFilter = GlobalExceptionFilter_1 = class GlobalExceptionFilter {
     constructor() {
@@ -70,6 +71,8 @@ async function createApp() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.use((0, compression_1.default)());
     app.use((0, cookie_parser_1.default)());
+    app.use((0, express_1.json)({ limit: '50mb' }));
+    app.use((0, express_1.urlencoded)({ extended: true, limit: '50mb' }));
     const allowedOrigins = [
         process.env.FRONTEND_URL,
         'http://localhost:3000',
