@@ -310,6 +310,34 @@ Genera UN ÚNICO OBJETO JSON:
     }
   }
 
+  async consultarPolitico(input: {
+    pregunta: string;
+    contexto: Record<string, any>;
+  }): Promise<string> {
+    const system = `Eres un estratega electoral senior. Tienes acceso a datos reales de la campaña. Responde la pregunta del usuario usando ÚNICAMENTE la información del contexto que se te proporciona. Si no hay datos suficientes, di claramente qué falta. No inventes cifras. Sé concreto, accionable y devuelve la respuesta en markdown con listas y tablas cuando sea útil.`;
+
+    const user = `CONTEXTO DE LA CAMPAÑA (datos reales del sistema):
+${JSON.stringify(input.contexto, null, 2)}
+
+PREGUNTA DEL USUARIO:
+${input.pregunta}
+
+Responde en español, de manera directa y estratégica. Incluye cifras del contexto cuando aporten valor. Si la pregunta pide una acción concreta, termina con recomendaciones ejecutivas.`;
+
+    const response = await this.getClient().messages.create({
+      model: this.model,
+      max_tokens: 4096,
+      temperature: 0.4,
+      system,
+      messages: [{ role: 'user', content: user }],
+    });
+
+    return response.content
+      .filter((c) => c.type === 'text')
+      .map((c) => (c as any).text)
+      .join(' ');
+  }
+
   async analizarSeccion(datos: {
     seccion: string;
     municipio: string;

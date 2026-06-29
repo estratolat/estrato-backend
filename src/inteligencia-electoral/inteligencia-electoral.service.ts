@@ -1,13 +1,16 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../common/services/prisma.service';
 import { AnthropicService } from '../common/services/anthropic.service';
 import { CrearPartidoDto, ActualizarPartidoDto } from './dto/crear-partido.dto';
 import { CrearEleccionDto, ActualizarEleccionDto } from './dto/crear-eleccion.dto';
 import { CrearActorDto, ActualizarActorDto } from './dto/crear-actor.dto';
+import { ConsultaIADto } from './dto/consulta-ia.dto';
 
 @Injectable()
 export class InteligenciaElectoralService {
+  private readonly logger = new Logger(InteligenciaElectoralService.name);
+
   constructor(
     private prisma: PrismaService,
     private anthropic: AnthropicService,
@@ -751,6 +754,185 @@ export class InteligenciaElectoralService {
       clasificacion: proyeccion.clasificacion_estrategica,
       ...iaResultado,
     };
+  }
+
+  // =====================
+  // CONSULTOR IA (PROMPT LIBRE)
+  // =====================
+  async consultarIA(tenantId: string, dto: ConsultaIADto) {
+    const { pregunta, contextoCampana, eleccionId } = dto;
+
+    const [
+      resumenProyeccion,
+      seccionesProyeccion,
+      historicos,
+      votantesResumen,
+      casillas,
+      eleccionContexto,
+    ] = await Promise.all([
+      this.obtenerResumenProyeccion(tenantId),
+      this.obtenerProyeccionPorSeccion(tenantId),
+      this.obtenerHistorico(tenantId),
+      this.obtenerResumenVotantes(tenantId),
+      this.obtenerResumenCasillas(tenantId),
+      eleccionId ? this.obtenerContextoEleccion(tenantId, eleccionId) : null,
+    ]);
+
+    const contexto = {
+      tenant_id: tenantId,
+      eleccion: eleccionContexto,
+      campana: contextoCampana || null,
+      proyeccion: resumenProyeccion,
+      proyeccion_por_seccion_o_zona: seccionesProyeccion.slice(0, 50),
+      historico_electoral: historicos.slice(0, 50),
+      votantes: votantesResumen,
+      sedes_casillas: casillas,
+    };
+
+    let respuesta: string;
+    try {
+      respuesta = await this.anthropic.consultarPolitico({
+        pregunta,
+        contexto,
+      });
+    } catch (err) {
+      this.logger.error('Error consultando IA:', err);
+      throw new BadRequestException('El servicio de IA no está disponible en este momento. Verifica ANTHROPIC_API_KEY.');
+    }
+
+    return {
+      pregunta,
+      respuesta,
+      eleccion_id: eleccionId || null,
+      contexto_resumen: {
+        proyeccion: resumenProyeccion,
+        votantes: votantesResumen,
+        sedes: casillas,
+        historicos: historicos.length,
+      },
+    };
+  }
+
+  private async obtenerResumenProyeccion(tenantId: string) {
+    try {
+      // Importación dinámica para evitar dependencia circular si en el futuro ProyeccionService importa este servicio
+      const { ProyeccionService } = await import('../proyeccion/proyeccion.service');
+      const proyeccion = new ProyeccionService(this.prisma as any);
+      return proyeccion.resumen(tenantId);
+    } catch (err) {
+      this.logger.warn('No se pudo cargar resumen de proyección', err);
+      return null;
+    }
+  }
+
+  private async obtenerProyeccionPorSeccion(tenantId: string) {
+    try {
+      const { ProyeccionService } = await import('../proyeccion/proyeccion.service');
+      const proyeccion = new ProyeccionService(this.prisma as any);
+      return proyeccion.porSeccion(tenantId);
+    } catch (err) {
+      this.logger.warn('No se pudo cargar proyección por sección', err);
+      return [];
+    }
+  }
+
+  private async obtenerHistorico(tenantId: string) {
+    return this.prisma.resultadoHistorico.findMany({
+      where: { tenant_id: tenantId },
+      orderBy: [{ anio: 'desc' }, { seccion: 'asc' }],
+      take: 200,
+    });
+  }
+
+  private async obtenerResumenVotantes(tenantId: string) {
+    const [total, porSeccion, porNivel, porZona] = await Promise.all([
+      this.prisma.votante.count({ where: { tenant_id: tenantId, activo: true } }),
+      this.prisma.votante.groupBy({
+        by: ['seccion_electoral'],
+        where: { tenant_id: tenantId, activo: true },
+        _count: { id: true },
+      }),
+      this.prisma.votante.groupBy({
+        by: ['nivel_apoyo'],
+        where: { tenant_id: tenantId, activo: true },
+        _count: { id: true },
+      }),
+      this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT z.nombre as zona, COUNT(v.id)::int as total
+        FROM votantes v
+        LEFT JOIN zonas z ON z.id::text = (v.metadata->>'zona_id')::text
+        WHERE v.tenant_id = $1::uuid AND v.activo = true
+        GROUP BY z.nombre
+        ORDER BY total DESC
+        LIMIT 20
+      `, tenantId),
+    ]);
+
+    return {
+      total,
+      por_seccion: porSeccion
+        .filter((s) => s.seccion_electoral)
+        .map((s) => ({ seccion: s.seccion_electoral, total: s._count.id }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 30),
+      por_nivel_apoyo: porNivel.map((n) => ({
+        nivel: n.nivel_apoyo ?? 'sin_nivel',
+        total: n._count.id,
+      })),
+      por_zona: porZona || [],
+    };
+  }
+
+  private async obtenerResumenCasillas(tenantId: string) {
+    const [total, porStatus, porSeccion] = await Promise.all([
+      this.prisma.casilla.count({ where: { tenant_id: tenantId } }),
+      this.prisma.casilla.groupBy({
+        by: ['status'],
+        where: { tenant_id: tenantId },
+        _count: { id: true },
+      }),
+      this.prisma.casilla.groupBy({
+        by: ['seccion'],
+        where: { tenant_id: tenantId },
+        _count: { id: true },
+      }),
+    ]);
+
+    return {
+      total,
+      por_status: porStatus.map((s) => ({ status: s.status, total: s._count.id })),
+      por_seccion: porSeccion
+        .map((s) => ({ seccion: s.seccion, total: s._count.id }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 30),
+    };
+  }
+
+  private async obtenerContextoEleccion(tenantId: string, eleccionId: string) {
+    try {
+      const eleccion = await this.findOneEleccion(tenantId, eleccionId);
+      const secciones = await this.getSecciones(tenantId, eleccionId);
+      return {
+        id: eleccion.id,
+        nombre: eleccion.nombre,
+        anio: eleccion.anio,
+        puesto: eleccion.puesto,
+        actores: eleccion.actores.map((a: any) => ({
+          nombre: a.nombre_visual,
+          siglas: a.partido?.siglas || a.tipo_actor,
+          color: a.color_hex || a.partido?.color_hex,
+        })),
+        resumen_secciones: {
+          total: secciones.length,
+          bastiones: secciones.filter((s: any) => s.clasificacion_estrategica === 'BASTION').length,
+          riesgo: secciones.filter((s: any) => s.clasificacion_estrategica === 'PRIORITARIA_RIESGO').length,
+          persuasion: secciones.filter((s: any) => s.clasificacion_estrategica === 'PERSUASION').length,
+        },
+      };
+    } catch (err) {
+      this.logger.warn('No se pudo cargar contexto de elección', err);
+      return null;
+    }
   }
 
   // =====================

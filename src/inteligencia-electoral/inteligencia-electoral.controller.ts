@@ -25,6 +25,7 @@ import { InteligenciaElectoralService } from './inteligencia-electoral.service';
 import { CrearPartidoDto, ActualizarPartidoDto } from './dto/crear-partido.dto';
 import { CrearEleccionDto, ActualizarEleccionDto } from './dto/crear-eleccion.dto';
 import { CrearActorDto, ActualizarActorDto } from './dto/crear-actor.dto';
+import { ConsultaIADto } from './dto/consulta-ia.dto';
 
 @Controller('inteligencia-electoral')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -206,5 +207,13 @@ export class InteligenciaElectoralController {
     @Req() req: any,
   ) {
     return this.service.analizarSeccion(req.tenant.id, id, seccion);
+  }
+
+  // =====================
+  // CONSULTOR IA (PROMPT LIBRE + CONTEXTO DE CAMPAÑA)
+  // =====================
+  @Post('consultar-ia')
+  async consultarIA(@Body() dto: ConsultaIADto, @Req() req: any) {
+    return this.service.consultarIA(req.tenant.id, dto);
   }
 }
