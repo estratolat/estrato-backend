@@ -1,16 +1,6 @@
 .vercel
 .env*
 
-# Compilados
-dist
-
 # Scripts temporales de importación / diagnóstico (contienen credenciales)
 /*.js
 /scripts/
-
-# Logs
-*.log
-npm-debug.log*
-
-# Sistema operativo
-.DS_Store

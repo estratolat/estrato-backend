@@ -20,14 +20,13 @@ import { AdminModule } from './admin/admin.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { PeticionesModule } from './peticiones/peticiones.module';
 import { CandidatoModule } from './candidato/candidato.module';
-import { InegiModule } from './inegi/inegi.module';
-import { ColoniasModule } from './colonias/colonias.module';
 import { ResultadosHistoricosModule } from './resultados-historicos/resultados-historicos.module';
 import { EncuestasModule } from './encuestas/encuestas.module';
 import { CasillasModule } from './casillas/casillas.module';
 import { MonitoreoModule } from './monitoreo/monitoreo.module';
 import { ProyeccionModule } from './proyeccion/proyeccion.module';
 import { FichasSeccionalesModule } from './fichas-seccionales/fichas-seccionales.module';
+import { InteligenciaElectoralModule } from './inteligencia-electoral/inteligencia-electoral.module';
 
 @Module({
   imports: [
@@ -54,14 +53,13 @@ import { FichasSeccionalesModule } from './fichas-seccionales/fichas-seccionales
     UploadsModule,
     PeticionesModule,
     CandidatoModule,
-    InegiModule,
-    ColoniasModule,
     ResultadosHistoricosModule,
     EncuestasModule,
     CasillasModule,
     MonitoreoModule,
     ProyeccionModule,
     FichasSeccionalesModule,
+    InteligenciaElectoralModule,
   ],
   controllers: [AppController],
 })
