@@ -60,19 +60,28 @@ export class ProyeccionService {
   }
 
   async resumen(tenantId: string) {
-    const [totalVotantes, totalApoyos, totalLideres, totalMetas] = await Promise.all([
+    const [totalVotantes, totalApoyos, totalLideres, totalMetas, globalMeta] = await Promise.all([
       this.prisma.votante.count({ where: { tenant_id: tenantId, activo: true } }),
       this.prisma.apoyo.count({ where: { tenant_id: tenantId } }),
       this.prisma.lider.count({ where: { tenant_id: tenantId, activo: true } }),
-      this.prisma.metaVotacion.aggregate({ where: { tenant_id: tenantId }, _sum: { meta_votos: true } }),
+      this.prisma.metaVotacion.aggregate({ where: { tenant_id: tenantId, seccion: null, zona_id: null }, _sum: { meta_votos: true } }),
+      this.prisma.metaVotacion.findFirst({
+        where: { tenant_id: tenantId, seccion: null, zona_id: null },
+        orderBy: { created_at: 'desc' },
+      }),
     ]);
-    const metaTotal = totalMetas._sum.meta_votos || 0;
+    const padronTotal = globalMeta?.meta_lista_nominal || totalVotantes;
+    const metaVotosTotal = globalMeta?.meta_votos || totalMetas._sum.meta_votos || 0;
     return {
-      votantes_registrados: totalVotantes,
+      votantes_registrados: padronTotal,
+      votantes_capturados: totalVotantes,
       apoyos_registrados: totalApoyos,
       lideres_registrados: totalLideres,
-      meta_votos_total: metaTotal,
-      brecha: metaTotal - totalVotantes,
+      meta_votos_total: metaVotosTotal,
+      meta_participacion: globalMeta?.meta_participacion ?? null,
+      meta_lista_nominal: globalMeta?.meta_lista_nominal ?? null,
+      brecha: metaVotosTotal - padronTotal,
+      avance_padron: padronTotal > 0 ? Math.round((totalVotantes / padronTotal) * 1000) / 10 : 0,
     };
   }
 
