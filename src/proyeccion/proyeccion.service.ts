@@ -100,7 +100,8 @@ export class ProyeccionService {
 
     // Filas base por sección electoral (votantes reales)
     seccionesRaw.forEach((s) => {
-      const sec = s.seccion_electoral || 'Sin sección';
+      if (!s.seccion_electoral) return; // omitir votantes sin sección asignada
+      const sec = s.seccion_electoral;
       porSeccion.set(sec, {
         seccion: sec,
         votantes: s._count.id,
@@ -114,7 +115,8 @@ export class ProyeccionService {
     });
 
     lideresRaw.forEach((l) => {
-      const sec = l.votante?.seccion_electoral || 'Sin sección';
+      if (!l.votante?.seccion_electoral) return;
+      const sec = l.votante.seccion_electoral;
       const r = porSeccion.get(sec) || {
         seccion: sec,
         votantes: 0,
