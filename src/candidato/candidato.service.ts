@@ -86,7 +86,7 @@ export class CandidatoService {
         tono: huella.tono,
         propuesta_central: huella.propuesta_central,
         estilo_redes: huella.estilo_redes,
-        metadata: huella as any,
+        metadata: { ...(perfil.metadata as any || {}), ...(huella as any) },
         analizado_en: new Date(),
       },
     });

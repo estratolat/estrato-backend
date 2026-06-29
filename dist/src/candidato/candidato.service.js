@@ -85,7 +85,7 @@ let CandidatoService = class CandidatoService {
                 tono: huella.tono,
                 propuesta_central: huella.propuesta_central,
                 estilo_redes: huella.estilo_redes,
-                metadata: huella,
+                metadata: { ...(perfil.metadata || {}), ...huella },
                 analizado_en: new Date(),
             },
         });
