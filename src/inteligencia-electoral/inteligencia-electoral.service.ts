@@ -760,7 +760,15 @@ export class InteligenciaElectoralService {
   // CONSULTOR IA (PROMPT LIBRE)
   // =====================
   async consultarIA(tenantId: string, dto: ConsultaIADto) {
-    const { pregunta, contextoCampana, eleccionId } = dto;
+    const {
+      pregunta,
+      contextoCampana,
+      eleccionId,
+      fuentes = { proyeccion: true, historico: true, votantes: true, sedes: true, eleccion: true },
+      filtroTerritorial = { tipo: 'todos', valor: '' },
+    } = dto;
+
+    const ft = (k: string) => fuentes[k] !== false;
 
     const [
       resumenProyeccion,
@@ -770,24 +778,61 @@ export class InteligenciaElectoralService {
       casillas,
       eleccionContexto,
     ] = await Promise.all([
-      this.obtenerResumenProyeccion(tenantId),
-      this.obtenerProyeccionPorSeccion(tenantId),
-      this.obtenerHistorico(tenantId),
-      this.obtenerResumenVotantes(tenantId),
-      this.obtenerResumenCasillas(tenantId),
-      eleccionId ? this.obtenerContextoEleccion(tenantId, eleccionId) : null,
+      ft('proyeccion') ? this.obtenerResumenProyeccion(tenantId) : null,
+      ft('proyeccion') ? this.obtenerProyeccionPorSeccion(tenantId) : [],
+      ft('historico') ? this.obtenerHistorico(tenantId) : [],
+      ft('votantes') ? this.obtenerResumenVotantes(tenantId) : null,
+      ft('sedes') ? this.obtenerResumenCasillas(tenantId) : null,
+      ft('eleccion') && eleccionId ? this.obtenerContextoEleccion(tenantId, eleccionId) : null,
     ]);
 
-    const contexto = {
+    const contexto: Record<string, any> = {
       tenant_id: tenantId,
-      eleccion: eleccionContexto,
+      filtro_territorial: filtroTerritorial,
       campana: contextoCampana || null,
-      proyeccion: resumenProyeccion,
-      proyeccion_por_seccion_o_zona: seccionesProyeccion.slice(0, 50),
-      historico_electoral: historicos.slice(0, 50),
-      votantes: votantesResumen,
-      sedes_casillas: casillas,
     };
+
+    if (ft('eleccion') && eleccionContexto) contexto.eleccion = eleccionContexto;
+    if (ft('proyeccion')) {
+      contexto.proyeccion = resumenProyeccion;
+      contexto.proyeccion_por_seccion_o_zona = this.aplicarFiltroTerritorial(
+        seccionesProyeccion,
+        filtroTerritorial,
+        'seccion',
+      ).slice(0, 50);
+    }
+    if (ft('historico')) {
+      contexto.historico_electoral = this.aplicarFiltroTerritorial(
+        historicos,
+        filtroTerritorial,
+        'seccion',
+      ).slice(0, 50);
+    }
+    if (ft('votantes')) {
+      contexto.votantes = votantesResumen;
+      if (votantesResumen) {
+        contexto.votantes.por_seccion = this.aplicarFiltroTerritorial(
+          votantesResumen.por_seccion || [],
+          filtroTerritorial,
+          'seccion',
+        );
+        contexto.votantes.por_zona = this.aplicarFiltroTerritorial(
+          votantesResumen.por_zona || [],
+          filtroTerritorial,
+          'zona',
+        );
+      }
+    }
+    if (ft('sedes')) {
+      contexto.sedes_casillas = casillas;
+      if (casillas) {
+        contexto.sedes_casillas.por_seccion = this.aplicarFiltroTerritorial(
+          casillas.por_seccion || [],
+          filtroTerritorial,
+          'seccion',
+        );
+      }
+    }
 
     let respuesta: string;
     try {
@@ -805,12 +850,29 @@ export class InteligenciaElectoralService {
       respuesta,
       eleccion_id: eleccionId || null,
       contexto_resumen: {
-        proyeccion: resumenProyeccion,
-        votantes: votantesResumen,
-        sedes: casillas,
+        proyeccion: !!resumenProyeccion,
+        votantes: !!votantesResumen,
+        sedes: !!casillas,
         historicos: historicos.length,
+        filtro_territorial: filtroTerritorial,
       },
     };
+  }
+
+  private aplicarFiltroTerritorial(
+    items: any[],
+    filtro: { tipo: string; valor: string },
+    campo: 'seccion' | 'zona' = 'seccion',
+  ): any[] {
+    if (!items || !Array.isArray(items)) return [];
+    if (filtro.tipo === 'todos' || !filtro.valor) return items;
+
+    const valor = filtro.valor.toLowerCase().trim();
+    return items.filter((item) => {
+      const clave = campo === 'seccion' ? item.seccion : item.zona || item.nombre;
+      if (!clave) return false;
+      return String(clave).toLowerCase().includes(valor);
+    });
   }
 
   private async obtenerResumenProyeccion(tenantId: string) {
