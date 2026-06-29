@@ -687,7 +687,7 @@ model SeccionINE {
 model ResultadoHistorico {
   id                Int    @id @default(autoincrement())
   tenant_id         String @db.Uuid
-  seccion           String @db.VarChar(4)
+  seccion           String @db.VarChar(100)
   anio              Int // 2018, 2021, 2024
   estado_id         Int?
   municipio_id      Int?
