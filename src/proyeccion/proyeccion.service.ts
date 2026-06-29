@@ -82,11 +82,6 @@ export class ProyeccionService {
       where: { tenant_id: tenantId, activo: true },
       _count: { id: true },
     });
-    const apoyosRaw = await this.prisma.apoyo.groupBy({
-      by: ['votante_id'],
-      where: { tenant_id: tenantId },
-      _count: { id: true },
-    });
     const lideresRaw = await this.prisma.lider.findMany({
       where: { tenant_id: tenantId, activo: true },
       include: { votante: { select: { seccion_electoral: true } } },
@@ -94,15 +89,16 @@ export class ProyeccionService {
     const metasRaw = await this.prisma.metaVotacion.findMany({
       where: { tenant_id: tenantId },
       orderBy: { created_at: 'desc' },
+      include: { zona: { select: { id: true, nombre: true } } },
     });
     const historicoRaw = await this.prisma.resultadoHistorico.findMany({
       where: { tenant_id: tenantId },
       orderBy: { anio: 'desc' },
     });
 
-    const apoyosPorVotante = new Set(apoyosRaw.map((a) => a.votante_id));
     const porSeccion = new Map<string, any>();
 
+    // Filas base por sección electoral (votantes reales)
     seccionesRaw.forEach((s) => {
       const sec = s.seccion_electoral || 'Sin sección';
       porSeccion.set(sec, {
@@ -133,18 +129,28 @@ export class ProyeccionService {
       porSeccion.set(sec, r);
     });
 
-    Array.from(apoyosPorVotante).forEach((vid) => {
-      // No se tiene sección directa; resumiremos por votante? omitimos granularidad
-    });
-
+    // Aplicar metas por sección o por zona sindical
     metasRaw.forEach((m) => {
-      if (m.seccion && porSeccion.has(m.seccion)) {
-        const r = porSeccion.get(m.seccion);
-        r.meta_votos = m.meta_votos;
-        r.lista_nominal_2024 = m.meta_lista_nominal;
-        r.votos_estimados = Math.round(r.votantes * 0.7 + r.lideres * 10 + r.apoyos * 0.5);
-        r.faltan_para_ganar = Math.max(0, m.meta_votos - r.votos_estimados);
+      const key = m.seccion || (m.zona?.nombre ?? null);
+      if (!key) return;
+
+      if (!porSeccion.has(key)) {
+        porSeccion.set(key, {
+          seccion: key,
+          votantes: 0,
+          apoyos: 0,
+          lideres: 0,
+          lista_nominal_2024: undefined,
+          meta_votos: undefined,
+          votos_estimados: 0,
+          tendencia: 'sin_datos',
+        });
       }
+      const r = porSeccion.get(key);
+      r.meta_votos = m.meta_votos;
+      r.lista_nominal_2024 = m.meta_lista_nominal;
+      r.votos_estimados = Math.round(r.votantes * 0.7 + r.lideres * 10 + r.apoyos * 0.5);
+      r.faltan_para_ganar = Math.max(0, m.meta_votos - r.votos_estimados);
     });
 
     historicoRaw.forEach((h) => {
