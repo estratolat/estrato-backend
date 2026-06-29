@@ -251,6 +251,76 @@ Genera UN ÚNICO OBJETO JSON:
                 : { titulo: 'Boletín generado', bajada: '', desarrollo: clean, texto: clean };
         }
     }
+    async analizarSeccion(datos) {
+        const prompt = this.construirPromptSeccion(datos);
+        const response = await this.getClient().messages.create({
+            model: this.model,
+            max_tokens: 2048,
+            temperature: 0.3,
+            system: 'Eres un estratega electoral senior y consultor político. Analiza datos reales de una sección electoral y devuelve SIEMPRE un único objeto JSON válido sin markdown ni explicaciones adicionales.',
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const text = response.content
+            .filter((c) => c.type === 'text')
+            .map((c) => c.text)
+            .join(' ');
+        return this.parsearAnalisisSeccion(text);
+    }
+    construirPromptSeccion(datos) {
+        return `Analiza los datos agregados de la Sección ${datos.seccion} (Municipio: ${datos.municipio}).
+
+DATOS AGREGADOS:
+- Lista Nominal: ${datos.lista_nominal.toLocaleString()}
+- Total Votos Emitidos: ${datos.total_votos.toLocaleString()} (Participación: ${datos.porcentaje_participacion.toFixed(2)}%)
+- Votos Nulos en la Sección: ${datos.votos_nulos.toLocaleString()} (${datos.porcentaje_nulos.toFixed(2)}% del total)
+- Actor Ganador: ${datos.actor_ganador}
+
+DESGLOSE DE VOTOS POR ACTOR:
+${JSON.stringify(datos.desglose, null, 2)}
+
+DESGLOSE POR CASILLA E INCIDENCIAS:
+${JSON.stringify(datos.desglose_casillas, null, 2)}
+
+TAREA:
+1. Evalúa si el volumen de votos nulos o las observaciones de las casillas ("Grupo de recuento", etc.) representan un riesgo de impugnación legal (Defensa Electoral).
+2. Proyecta los votos mínimos necesarios para ganar la sección basándote en la lista nominal y la participación observada.
+3. Devuelve tu análisis estrictamente en formato JSON con exactamente estas claves:
+{
+  "proyeccion_votos": integer,
+  "nivel_riesgo": "ALTO" | "MEDIO" | "BAJO",
+  "auditoria_nulos_observaciones": "string",
+  "estrategia": ["string", "string"]
+}
+
+Reglas:
+- proyeccion_votos debe ser un número entero razonable (mayor que la mitad de votos válidos proyectados).
+- estrategia debe ser un array con 2 a 5 líneas de acción concretas para la campaña.`;
+    }
+    parsearAnalisisSeccion(text) {
+        const clean = this.extraerJson(text);
+        const fallback = {
+            proyeccion_votos: 0,
+            nivel_riesgo: 'MEDIO',
+            auditoria_nulos_observaciones: '',
+            estrategia: [],
+        };
+        try {
+            const parsed = JSON.parse(clean);
+            const riesgo = ['ALTO', 'MEDIO', 'BAJO'].includes(parsed.nivel_riesgo)
+                ? parsed.nivel_riesgo
+                : 'MEDIO';
+            return {
+                proyeccion_votos: Number(parsed.proyeccion_votos) || 0,
+                nivel_riesgo: riesgo,
+                auditoria_nulos_observaciones: String(parsed.auditoria_nulos_observaciones || ''),
+                estrategia: Array.isArray(parsed.estrategia) ? parsed.estrategia.map(String) : [],
+            };
+        }
+        catch (e) {
+            this.logger.error('Error parseando análisis de sección de Anthropic:', e, text);
+            return fallback;
+        }
+    }
     extraerJson(text) {
         const trimmed = text.trim();
         const start = trimmed.indexOf('{');

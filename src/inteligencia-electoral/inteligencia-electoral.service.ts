@@ -109,12 +109,14 @@ export class InteligenciaElectoralService {
   }
 
   async createEleccion(tenantId: string, dto: CrearEleccionDto) {
+    const puestoKey = this.normalizarPuesto(dto.puesto);
+    const nombreSugerido = `${this.nombrePuesto(puestoKey)} ${dto.anio}`;
     return this.prisma.eleccion.create({
       data: {
         tenant_id: tenantId,
-        nombre: dto.nombre.trim(),
+        nombre: dto.nombre?.trim() || nombreSugerido,
         anio: dto.anio,
-        puesto: dto.puesto.trim(),
+        puesto: puestoKey,
         descripcion: dto.descripcion?.trim(),
         activa: dto.activa ?? true,
       },
@@ -184,6 +186,8 @@ export class InteligenciaElectoralService {
         nombre_visual: dto.nombre_visual.trim(),
         color_hex: dto.color_hex || null,
         columna_excel_alias: alias,
+        tipo_voto: dto.tipo_voto || 'TOTAL',
+        tipo_actor: dto.tipo_actor || 'PARTIDO',
         orden: dto.orden ?? 0,
       },
       include: { partido: { select: { id: true, siglas: true, nombre: true, color_hex: true } } },
@@ -223,6 +227,8 @@ export class InteligenciaElectoralService {
         nombre_visual: dto.nombre_visual?.trim(),
         color_hex: dto.color_hex,
         columna_excel_alias: dto.columna_excel_alias,
+        tipo_voto: dto.tipo_voto,
+        tipo_actor: dto.tipo_actor,
         orden: dto.orden,
       },
       include: { partido: { select: { id: true, siglas: true, nombre: true, color_hex: true } } },
@@ -247,9 +253,13 @@ export class InteligenciaElectoralService {
     const actores = await this.findActoresByEleccion(tenantId, eleccionId);
 
     const columnasFijas = [
+      'AÑO_ELECCION',
+      'CARGO',
+      'PAIS',
+      'ESTADO_NOMBRE',
       'ID_ESTADO',
-      'ID_MUNICIPIO',
       'MUNICIPIO',
+      'ID_MUNICIPIO',
       'SECCION',
       'CASILLA',
       'LISTA_NOMINAL',
@@ -268,7 +278,11 @@ export class InteligenciaElectoralService {
     // Fila de ejemplo
     const ejemplo: any[] = [];
     for (const h of headers) {
-      if (['ID_ESTADO', 'ID_MUNICIPIO'].includes(h)) ejemplo.push('00');
+      if (h === 'AÑO_ELECCION') ejemplo.push(eleccion.anio);
+      else if (h === 'CARGO') ejemplo.push(eleccion.puesto);
+      else if (h === 'PAIS') ejemplo.push('México');
+      else if (h === 'ESTADO_NOMBRE') ejemplo.push('Ej. Sinaloa');
+      else if (['ID_ESTADO', 'ID_MUNICIPIO'].includes(h)) ejemplo.push('00');
       else if (h === 'SECCION') ejemplo.push('0000');
       else if (h === 'LISTA_NOMINAL' || h === 'TOTAL_VOTOS' || h === 'VOTOS_NULOS' || h === 'CAND_NO_REG') ejemplo.push(0);
       else if (columnasActores.includes(h)) ejemplo.push(0);
@@ -308,12 +322,29 @@ export class InteligenciaElectoralService {
       const row = rows[i];
       const fila = i + 2;
 
-      const estadoId = this.normalizarTexto(row.ID_ESTADO || row['ID ESTADO'] || row.id_estado || row.estado_id);
+      // Metadatos de la sabana (opcionales; se validan suavemente)
+      const anioFila = this.numero(row.AÑO_ELECCION || row['AÑO ELECCION'] || row.anio_eleccion || row.ano_eleccion || 0);
+      const cargoFila = this.normalizarTexto(row.CARGO || row.cargo || '');
+      const paisFila = this.normalizarTexto(row.PAIS || row.pais || '');
+      const estadoNombreFila = this.normalizarTexto(row.ESTADO_NOMBRE || row['ESTADO NOMBRE'] || row.estado_nombre || row.estado || '');
+
+      let estadoId = this.normalizarTexto(row.ID_ESTADO || row['ID ESTADO'] || row.id_estado || row.estado_id);
+      if (!estadoId && estadoNombreFila) {
+        estadoId = this.idEstadoPorNombre(estadoNombreFila);
+      }
       const municipioId = this.normalizarTexto(row.ID_MUNICIPIO || row['ID MUNICIPIO'] || row.id_municipio || row.municipio_id);
       const municipio = String(row.MUNICIPIO || row.municipio || '').trim();
       let seccion = this.normalizarSeccion(row.SECCION || row.seccion || row.Seccion || row['SECCION ']);
       const casilla = String(row.CASILLA || row.casilla || row.CASILL || '').trim();
       const listaNominal = this.numero(row.LISTA_NOMINAL || row['LISTA NOMINAL'] || row.lista_nominal || 0);
+
+      // Validaciones suaves de metadatos (sólo advertencias)
+      if (anioFila && anioFila !== eleccion.anio) {
+        errores.push({ fila, seccion, casilla, error: `Año ${anioFila} no coincide con el año de la elección (${eleccion.anio}). Se ignorará.` });
+      }
+      if (cargoFila && cargoFila.toLowerCase() !== eleccion.puesto.toLowerCase()) {
+        errores.push({ fila, seccion, casilla, error: `Cargo "${cargoFila}" no coincide con "${eleccion.puesto}". Se ignorará.` });
+      }
 
       if (!seccion) {
         errores.push({ fila, error: 'Falta SECCION' });
@@ -560,6 +591,78 @@ export class InteligenciaElectoralService {
   }
 
   // =====================
+  // MAPA DE SECCIONES COLOREADO POR GANADOR
+  // =====================
+  async generarMapaSecciones(tenantId: string, eleccionId: string) {
+    const eleccion = await this.findOneEleccion(tenantId, eleccionId);
+
+    // Buscar capa de secciones del INE para este tenant
+    const capaSecciones = await this.prisma.capaMapa.findFirst({
+      where: {
+        tenant_id: tenantId,
+        tipo: 'secciones_ine',
+        metadata: { path: ['nivel'], equals: 'seccion' },
+      },
+    });
+
+    if (!capaSecciones || !capaSecciones.geojson) {
+      throw new NotFoundException('No se encontró una capa de secciones electorales cargada. Sube el shapefile de secciones primero.');
+    }
+
+    const proyecciones = await this.prisma.seccionAnalisisProyeccion.findMany({
+      where: { tenant_id: tenantId, eleccion_id: eleccionId },
+      include: {
+        actor: {
+          include: { partido: { select: { id: true, siglas: true, nombre: true, color_hex: true } } },
+        },
+      },
+    });
+
+    const proyeccionPorSeccion = new Map(
+      proyecciones.map((p) => [p.seccion.padStart(4, '0'), p]),
+    );
+
+    const fc = capaSecciones.geojson as { type: 'FeatureCollection'; features: any[] };
+    const featuresColoreados = fc.features.map((feature: any) => {
+      const seccionRaw = feature.properties?.SECCION ?? feature.properties?.seccion ?? feature.properties?.SECC ?? '';
+      const seccion = String(seccionRaw).padStart(4, '0');
+      const proy = proyeccionPorSeccion.get(seccion);
+
+      const color = proy?.actor?.color_hex || proy?.actor?.partido?.color_hex || '#9CA3AF';
+      return {
+        ...feature,
+        properties: {
+          ...feature.properties,
+          _eleccion_id: eleccionId,
+          _eleccion_nombre: eleccion.nombre,
+          _seccion_normalizada: seccion,
+          _actor_ganador: proy?.actor?.nombre_visual || 'Sin datos',
+          _actor_ganador_id: proy?.actor_ganador_id || null,
+          _color_ganador: color,
+          _clasificacion: proy?.clasificacion_estrategica || 'SIN_DATOS',
+          _porcentaje_nulos: proy?.porcentaje_votos_nulos || 0,
+          _total_votos: proy?.total_votos_total || 0,
+          _lista_nominal: proy?.lista_nominal_total || 0,
+          _tiene_datos: !!proy,
+        },
+      };
+    });
+
+    return {
+      type: 'FeatureCollection',
+      features: featuresColoreados,
+      properties: {
+        eleccion_id: eleccionId,
+        eleccion_nombre: eleccion.nombre,
+        anio: eleccion.anio,
+        puesto: eleccion.puesto,
+        total_secciones: featuresColoreados.length,
+        secciones_con_datos: proyecciones.length,
+      },
+    };
+  }
+
+  // =====================
   // ANÁLISIS CON IA (ANTHROPIC)
   // =====================
   async analizarSeccion(tenantId: string, eleccionId: string, seccionRaw: string) {
@@ -648,5 +751,178 @@ export class InteligenciaElectoralService {
       clasificacion: proyeccion.clasificacion_estrategica,
       ...iaResultado,
     };
+  }
+
+  // =====================
+  // SÁBANA COMPLETA (DESCARGA)
+  // =====================
+  async generarSabana(tenantId: string, eleccionId: string) {
+    const eleccion = await this.findOneEleccion(tenantId, eleccionId);
+    const actores = await this.findActoresByEleccion(tenantId, eleccionId);
+    const actorMap = new Map(actores.map((a) => [a.id, a]));
+
+    const resultados = await this.prisma.resultadoCasilla.findMany({
+      where: { tenant_id: tenantId, eleccion_id: eleccionId },
+      orderBy: [{ seccion: 'asc' }, { casilla: 'asc' }],
+    });
+
+    // Calcular totales por sección y actor
+    const totalesPorSeccion = new Map<
+      string,
+      { lista_nominal: number; total_votos: number; por_actor: Map<string, number> }
+    >();
+    for (const r of resultados) {
+      if (!totalesPorSeccion.has(r.seccion)) {
+        totalesPorSeccion.set(r.seccion, { lista_nominal: 0, total_votos: 0, por_actor: new Map() });
+      }
+      const t = totalesPorSeccion.get(r.seccion)!;
+      t.lista_nominal += r.lista_nominal || 0;
+      t.total_votos += r.total_votos || 0;
+      const vd = (r.votos_data as Record<string, number>) || {};
+      for (const [aid, votos] of Object.entries(vd)) {
+        t.por_actor.set(aid, (t.por_actor.get(aid) || 0) + votos);
+      }
+    }
+
+    const columnasBase = [
+      'AÑO_ELECCION',
+      'CARGO',
+      'PAIS',
+      'ESTADO_NOMBRE',
+      'ID_ESTADO',
+      'MUNICIPIO',
+      'ID_MUNICIPIO',
+      'SECCION',
+      'CASILLA',
+      'LISTA_NOMINAL',
+    ];
+    const columnasActores = actores.map((a) => a.columna_excel_alias);
+    const columnasTotales = ['VOTOS_NO_REG', 'VOTOS_NULOS', 'TOTAL_VOTOS', 'ESTATUS_ACTA', 'OBSERVACIONES'];
+    const columnasResumenSeccion = actores.map((a) => `VOTOS_SECCION_${a.columna_excel_alias}`);
+    const columnasCandidato = actores.map((a) => `NOMBRE_CANDIDATO_${a.columna_excel_alias}`);
+
+    const headers = [
+      ...columnasBase,
+      ...columnasActores,
+      ...columnasTotales,
+      ...columnasResumenSeccion,
+      ...columnasCandidato,
+    ];
+
+    const rows: any[] = [headers];
+    for (const r of resultados) {
+      const vd = (r.votos_data as Record<string, number>) || {};
+      const totalesSeccion = totalesPorSeccion.get(r.seccion)!;
+      const base = [
+        eleccion.anio,
+        eleccion.puesto,
+        'México',
+        this.nombreEstadoMexico(r.estado_id),
+        r.estado_id,
+        r.municipio,
+        r.municipio_id,
+        r.seccion,
+        r.casilla,
+        r.lista_nominal,
+      ];
+      const votosActores = columnasActores.map((a) => {
+        const actorId = actorMap.get(actores.find((x) => x.columna_excel_alias === a)?.id || '')?.id;
+        return actorId ? (vd[actorId] || 0) : 0;
+      });
+      const totales = [r.votos_no_registrados, r.votos_nulos, r.total_votos, r.estatus_acta || '', r.observaciones || ''];
+      const resumen = columnasResumenSeccion.map((col) => {
+        const alias = col.replace('VOTOS_SECCION_', '');
+        const actorId = actorMap.get(actores.find((x) => x.columna_excel_alias === alias)?.id || '')?.id;
+        return actorId ? (totalesSeccion.por_actor.get(actorId) || 0) : 0;
+      });
+      const nombres = columnasCandidato.map((col) => {
+        const alias = col.replace('NOMBRE_CANDIDATO_', '');
+        const actor = actorMap.get(actores.find((x) => x.columna_excel_alias === alias)?.id || '')?.id || null;
+        return actor ? (actorMap.get(actor)?.nombre_visual || '') : '';
+      });
+
+      rows.push([...base, ...votosActores, ...totales, ...resumen, ...nombres]);
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Sabana');
+
+    // Resumen por sección en segunda hoja
+    const resumenHeaders = ['SECCION', 'LISTA_NOMINAL_SECCION', 'TOTAL_VOTOS_SECCION', ...actores.map((a) => `VOTOS_SECCION_${a.columna_excel_alias}`), 'VOTOS_NULOS_SECCION', 'GANADOR', 'CLASIFICACION'];
+    const proyecciones = await this.prisma.seccionAnalisisProyeccion.findMany({
+      where: { tenant_id: tenantId, eleccion_id: eleccionId },
+      include: { actor: true },
+      orderBy: { seccion: 'asc' },
+    });
+    const resumenRows: any[] = [resumenHeaders];
+    for (const p of proyecciones) {
+      const ts = totalesPorSeccion.get(p.seccion);
+      const actorCols = actores.map((a) => ts?.por_actor.get(a.id) || 0);
+      resumenRows.push([
+        p.seccion,
+        p.lista_nominal_total || 0,
+        p.total_votos_total || 0,
+        ...actorCols,
+        Math.round((p.porcentaje_votos_nulos || 0) / 100 * (p.total_votos_total || 0)),
+        p.actor?.nombre_visual || 'Sin ganador',
+        p.clasificacion_estrategica,
+      ]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumenRows), 'Resumen por sección');
+
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `sabana_${eleccion.nombre.replace(/\s+/g, '_')}_${eleccion.anio}.xlsx`;
+    return { buffer, filename };
+  }
+
+  private nombreEstadoMexico(id: string): string {
+    const mapa: Record<string, string> = {
+      '01': 'Aguascalientes', '02': 'Baja California', '03': 'Baja California Sur', '04': 'Campeche',
+      '05': 'Coahuila', '06': 'Colima', '07': 'Chiapas', '08': 'Chihuahua', '09': 'Ciudad de México',
+      '10': 'Durango', '11': 'Guanajuato', '12': 'Guerrero', '13': 'Hidalgo', '14': 'Jalisco',
+      '15': 'México', '16': 'Michoacán', '17': 'Morelos', '18': 'Nayarit', '19': 'Nuevo León',
+      '20': 'Oaxaca', '21': 'Puebla', '22': 'Querétaro', '23': 'Quintana Roo', '24': 'San Luis Potosí',
+      '25': 'Sinaloa', '26': 'Sonora', '27': 'Tabasco', '28': 'Tamaulipas', '29': 'Tlaxcala',
+      '30': 'Veracruz', '31': 'Yucatán', '32': 'Zacatecas',
+    };
+    return mapa[id.padStart(2, '0')] || id || '';
+  }
+
+  private normalizarPuesto(puesto: string): string {
+    const mapa: Record<string, string> = {
+      'presidente': 'Presidente República',
+      'presidente de la republica': 'Presidente República',
+      'presidente de la república': 'Presidente República',
+      'presidente republica': 'Presidente República',
+      'diputado federal': 'Diputaciones Federales',
+      'diputados federales': 'Diputaciones Federales',
+      'diputacion federal': 'Diputaciones Federales',
+      'diputado local': 'Diputaciones Locales',
+      'diputados locales': 'Diputaciones Locales',
+      'diputacion local': 'Diputaciones Locales',
+      'alcalde': 'Alcalde',
+      'presidente municipal': 'Alcalde',
+      'municipal': 'Alcalde',
+      'otro': 'Otro',
+    };
+    const k = puesto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    return mapa[k] || puesto.trim();
+  }
+
+  private nombrePuesto(puestoKey: string): string {
+    return puestoKey;
+  }
+
+  private idEstadoPorNombre(nombre: string): string {
+    const mapa: Record<string, string> = {
+      'aguascalientes': '01', 'baja california': '02', 'baja california sur': '03', 'campeche': '04',
+      'coahuila': '05', 'colima': '06', 'chiapas': '07', 'chihuahua': '08', 'ciudad de méxico': '09',
+      'durango': '10', 'guanajuato': '11', 'guerrero': '12', 'hidalgo': '13', 'jalisco': '14',
+      'méxico': '15', 'michoacán': '16', 'morelos': '17', 'nayarit': '18', 'nuevo león': '19',
+      'oaxaca': '20', 'puebla': '21', 'querétaro': '22', 'quintana roo': '23', 'san luis potosí': '24',
+      'sinaloa': '25', 'sonora': '26', 'tabasco': '27', 'tamaulipas': '28', 'tlaxcala': '29',
+      'veracruz': '30', 'yucatán': '31', 'zacatecas': '32',
+    };
+    return mapa[nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()] || '0';
   }
 }

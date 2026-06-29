@@ -36,4 +36,10 @@ export class AdminController {
   async createProject(@Body() data: CreateProjectDto) {
     return this.adminService.createProject(data);
   }
+
+  @Post('limpiar-capas-externas')
+  @ApiOperation({ summary: 'Eliminar capas de fuentes externas (INEGI/Nominatim/SEPOMEX) de la base de datos' })
+  async limpiarCapasExternas() {
+    return this.adminService.limpiarCapasExternas();
+  }
 }

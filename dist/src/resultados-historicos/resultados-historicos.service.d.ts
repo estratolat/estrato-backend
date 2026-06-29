@@ -19,9 +19,9 @@ export declare class ResultadosHistoricosService {
         seccion: string;
         estado_id: number | null;
         municipio_id: number | null;
+        votos_ganador: number | null;
         anio: number;
         partido_ganador: string;
-        votos_ganador: number | null;
         votos_totales: number | null;
         votos_nulos: number | null;
         participacion_pct: number | null;

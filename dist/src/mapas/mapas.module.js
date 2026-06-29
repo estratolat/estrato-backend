@@ -12,13 +12,11 @@ const mapas_controller_1 = require("./mapas.controller");
 const mapas_service_1 = require("./mapas.service");
 const gis_parser_service_1 = require("./gis-parser.service");
 const prisma_service_1 = require("../common/services/prisma.service");
-const inegi_module_1 = require("../inegi/inegi.module");
 let MapasModule = class MapasModule {
 };
 exports.MapasModule = MapasModule;
 exports.MapasModule = MapasModule = __decorate([
     (0, common_1.Module)({
-        imports: [inegi_module_1.InegiModule],
         controllers: [mapas_controller_1.MapasController],
         providers: [mapas_service_1.MapasService, gis_parser_service_1.GisParserService, prisma_service_1.PrismaService],
     })

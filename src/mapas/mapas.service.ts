@@ -1,41 +1,52 @@
-import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../common/services/prisma.service';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
-import { InegiService, TipoCapaInegi } from '../inegi/inegi.service';
-import { NominatimService } from '../inegi/nominatim.service';
 
-const TIPOS_CAPA = ['territorio', 'apoyos', 'lideres', 'votantes', 'secciones_ine', 'eventos', 'recorridos', 'custom', 'inegi', 'colonia'];
+const TIPOS_CAPA = ['territorio', 'apoyos', 'lideres', 'votantes', 'secciones_ine', 'eventos', 'recorridos', 'custom'];
 const ORIGENES_CAPA = ['propia', 'externa', 'neutral'];
 
 const CAPAS_PREDEFINIDAS = [
   { id: 'zonas', tipo: 'territorio', nombre: 'Zonas de trabajo', origen: 'propia', color: '#3B82F6', visible: true, orden: 1 },
-  { id: 'secciones_ine', tipo: 'secciones_ine', nombre: 'Secciones INE', origen: 'neutral', color: '#9CA3AF', visible: false, orden: 2 },
-  { id: 'lideres', tipo: 'lideres', nombre: 'Líderes territoriales', origen: 'propia', color: '#10B981', visible: true, orden: 3 },
-  { id: 'votantes', tipo: 'votantes', nombre: 'Votantes / simpatizantes', origen: 'propia', color: '#8B5CF6', visible: false, orden: 4 },
-  { id: 'apoyos', tipo: 'apoyos', nombre: 'Apoyos entregados', origen: 'propia', color: '#F59E0B', visible: true, orden: 5 },
-  { id: 'peticiones', tipo: 'peticiones', nombre: 'Peticiones ciudadanas', origen: 'propia', color: '#06B6D4', visible: true, orden: 6 },
-  { id: 'eventos', tipo: 'eventos', nombre: 'Eventos / mítines', origen: 'propia', color: '#EF4444', visible: true, orden: 7 },
-  { id: 'recorridos', tipo: 'recorridos', nombre: 'Recorridos de brigada', origen: 'propia', color: '#06B6D4', visible: false, orden: 8 },
+  { id: 'lideres', tipo: 'lideres', nombre: 'Líderes territoriales', origen: 'propia', color: '#10B981', visible: true, orden: 2 },
+  { id: 'votantes', tipo: 'votantes', nombre: 'Votantes / simpatizantes', origen: 'propia', color: '#8B5CF6', visible: false, orden: 3 },
+  { id: 'apoyos', tipo: 'apoyos', nombre: 'Apoyos entregados', origen: 'propia', color: '#F59E0B', visible: true, orden: 4 },
+  { id: 'peticiones', tipo: 'peticiones', nombre: 'Peticiones ciudadanas', origen: 'propia', color: '#06B6D4', visible: true, orden: 5 },
+  { id: 'eventos', tipo: 'eventos', nombre: 'Eventos / mítines', origen: 'propia', color: '#EF4444', visible: true, orden: 6 },
+  { id: 'recorridos', tipo: 'recorridos', nombre: 'Recorridos de brigada', origen: 'propia', color: '#06B6D4', visible: false, orden: 7 },
 ];
 
 @Injectable()
 export class MapasService {
   constructor(
     private prisma: PrismaService,
-    @Optional() private inegiService?: InegiService,
-    @Optional() private nominatimService?: NominatimService,
   ) {}
 
   // ======================
   // CAPAS (CRUD personalizadas)
   // ======================
   async findAllCapas(tenantId: string) {
+    // NO incluir el campo geojson aquí; puede pesar decenas de MB y causar OOM en Vercel.
     const personalizadas = await this.prisma.capaMapa.findMany({
       where: { tenant_id: tenantId },
       orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
-      include: { creador: { select: { id: true, nombre: true } } },
+      select: {
+        id: true,
+        tenant_id: true,
+        nombre: true,
+        tipo: true,
+        origen: true,
+        color: true,
+        visible: true,
+        orden: true,
+        metadata: true,
+        estilos: true,
+        created_by: true,
+        created_at: true,
+        updated_at: true,
+        creador: { select: { id: true, nombre: true } },
+      },
     });
 
     return {
@@ -806,7 +817,34 @@ export class MapasService {
       payload.metadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : {};
     }
 
+    if (data.estilos !== undefined) {
+      payload.estilos = data.estilos && typeof data.estilos === 'object' ? data.estilos : {};
+    }
+
     return payload;
+  }
+
+  async updateEstilosCapa(id: string, estilos: Record<string, any>, tenantId: string) {
+    await this.findOneCapa(id, tenantId);
+    return this.prisma.capaMapa.update({
+      where: { id },
+      data: { estilos: estilos || {} },
+      include: { creador: { select: { id: true, nombre: true } } },
+    });
+  }
+
+  private idFeature(feature: any): string {
+    const p = feature?.properties || {};
+    return p.id || p.ID || p.Id || p.OBJECTID || p.objectid || p.FID || p.fid || p.gid || p.GID || p.uid || p.UID || Math.random().toString(36).slice(2);
+  }
+
+  private nombreFeature(feature: any): string {
+    const p = feature?.properties || {};
+    const candidatos = ['nombre', 'NOMBRE', 'name', 'NAME', 'nomgeo', 'NOMGEO', 'nom_loc', 'NOM_LOC', 'nom_mun', 'NOM_MUN', 'seccion', 'SECCION', 'municipio', 'MUNICIPIO', 'colonia', 'COLONIA', 'localidad', 'LOCALIDAD'];
+    for (const k of candidatos) {
+      if (p[k] != null && String(p[k]).trim() !== '') return String(p[k]).trim();
+    }
+    return `Feature ${this.idFeature(feature).toString().slice(0, 20)}`;
   }
 
   private validarGeoJson(geojson: any) {
@@ -856,9 +894,6 @@ export class MapasService {
         case 'zonas':
         case 'territorio':
           resultado.zonas = await this.geojsonZonas(tenantId);
-          break;
-        case 'secciones_ine':
-          resultado.secciones_ine = await this.geojsonSeccionesINE(tenantId);
           break;
         case 'lideres':
           resultado.lideres = await this.geojsonLideres(tenantId);
@@ -1277,15 +1312,28 @@ export class MapasService {
       });
     }
 
+    // Estilos por feature: clave por id o nombre normalizado
+    const estilosCapa = (capa.estilos as Record<string, any>) || {};
+
     // Inyectar propiedades de la capa en cada feature
     const features = (collection.features || []).map((f: any) => {
       const props = f.properties || {};
+      const idFeature = this.idFeature(f);
+      const nombreFeature = this.nombreFeature(f);
+      const keyEstilo = estilosCapa[idFeature] ? idFeature : this.normalizarKeyFeature(nombreFeature);
+      const estiloFeature = estilosCapa[keyEstilo] || {};
+      const colorFeature = estiloFeature.color || estilosCapa[idFeature]?.color || capa.color;
+      const nombreOverride = estiloFeature.nombre || nombreFeature;
+
       const extra: Record<string, any> = {
         capa_id: capa.id,
         capa_nombre: capa.nombre,
         capa_tipo: capa.tipo,
         capa_origen: capa.origen,
-        color: capa.color,
+        color: colorFeature,
+        _feature_id: idFeature,
+        _feature_nombre: nombreOverride,
+        _feature_color: colorFeature,
       };
 
       if (esIne) {
@@ -1308,6 +1356,24 @@ export class MapasService {
     });
 
     return { type: 'FeatureCollection', features };
+  }
+
+  private normalizarKeyFeature(valor: string): string {
+    return valor
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  private normalizarBusqueda(valor: string): string {
+    return valor
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
   }
 
   // ======================
@@ -1589,113 +1655,35 @@ export class MapasService {
   // BÚSQUEDA GLOBAL TERRITORIAL
   // ======================
   async buscarGlobal(tenantId: string, query: string, limit = 15, tipoFiltro = 'todos') {
-    const inegi = this.inegiService;
-    const nominatim = this.nominatimService;
-    if (!inegi || !nominatim) {
-      throw new BadRequestException('Servicios de búsqueda externos no configurados');
-    }
-
     const q = (query || '').trim();
+    console.log('[buscarGlobal] tenantId:', tenantId, 'q:', q, 'tipoFiltro:', tipoFiltro);
     if (q.length < 2) return { resultados: [] };
 
     const max = Math.min(limit, 50);
     const termino = q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const resultados: any[] = [];
 
-    const incluir = (grupo: string) => tipoFiltro === 'todos' || tipoFiltro === grupo;
-
     const promesas: Promise<any[]>[] = [];
 
-    if (incluir('ine')) {
-      promesas.push(
-        this.prisma.seccionINE
-          .findMany({
-            where: {
-              tenant_id: tenantId,
-              OR: [
-                { seccion: { contains: termino } },
-                { estado: { contains: termino, mode: 'insensitive' } },
-                { municipio: { contains: termino, mode: 'insensitive' } },
-                ...(Number.isInteger(Number(termino)) && termino !== ''
-                  ? [
-                      { distrito_local: { equals: Number(termino) } },
-                      { distrito_federal: { equals: Number(termino) } },
-                    ]
-                  : []),
-              ],
-            },
-            take: max,
-            orderBy: [{ estado_id: 'asc' }, { municipio_id: 'asc' }, { seccion: 'asc' }],
-          })
-          .then((rows) =>
-            rows.map((s) => ({
-              id: `ine-seccion-${s.seccion}-${s.estado_id}-${s.municipio_id}`,
-              tipo: 'ine_seccion',
-              nombre: `Sección ${s.seccion}`,
-              descripcion: `${s.municipio}, ${s.estado}`,
-              estado: s.estado,
-              municipio: s.municipio,
-              seccion: s.seccion,
-              estado_id: s.estado_id,
-              municipio_id: s.municipio_id,
-              bbox: this.bboxFromGeometry(s.coordenadas),
-              geometry: s.coordenadas,
-            })),
-          ),
-      );
-    }
-
-    if (incluir('inegi')) {
-      promesas.push(
-        inegi
-          .descargar('estados')
-          .then((geo) => this.filtrarInegiGlobal(geo, 'estados', termino, max))
-          .catch(() => []),
-      );
-      promesas.push(
-        inegi
-          .descargar('municipios')
-          .then((geo) => this.filtrarInegiGlobal(geo, 'municipios', termino, max))
-          .catch(() => []),
-      );
-    }
-
-    if (incluir('colonia')) {
-      promesas.push(
-        nominatim
-          .buscar(q)
-          .then((rows) =>
-            rows.slice(0, max).map((r) => ({
-              id: `nominatim-${r.id}`,
-              tipo: 'colonia',
-              nombre: r.nombre,
-              descripcion: r.direccion,
-              bbox: this.bboxFromGeometry(r.geojson),
-              geometry: r.geojson,
-            })),
-          )
-          .catch(() => []),
-      );
-    }
-
-    if (incluir('capa')) {
+    // 1) Buscar capas por nombre (cualquier tipo de capa personalizada)
+    if (tipoFiltro === 'todos' || tipoFiltro === 'capa') {
       promesas.push(
         this.prisma.capaMapa
           .findMany({
             where: {
               tenant_id: tenantId,
-              tipo: { in: ['colonia', 'custom', 'inegi', 'secciones_ine'] },
               nombre: { contains: termino, mode: 'insensitive' },
             },
             take: max,
             orderBy: { nombre: 'asc' },
           })
-          .then((rows) =>
-            rows.map((c) => {
+          .then((rows) => {
+            console.log('[buscarGlobal] capas por nombre:', rows.length);
+            return rows.map((c) => {
               const geo = (c.geojson as any)?.features?.[0]?.geometry;
               return {
                 id: `capa-${c.id}`,
-                tipo: c.tipo === 'colonia' ? 'capa_colonia' : 'capa_custom',
+                tipo: 'capa',
                 nombre: c.nombre,
                 descripcion: c.tipo,
                 capaId: c.id,
@@ -1703,8 +1691,69 @@ export class MapasService {
                 bbox: geo ? this.bboxFromGeometry(geo) : undefined,
                 geometry: geo,
               };
-            }),
-          ),
+            });
+          }),
+      );
+    }
+
+    // 2) Buscar polígonos/features dentro de capas subidas
+    if (tipoFiltro === 'todos' || tipoFiltro === 'capa' || tipoFiltro === 'capa_feature') {
+      promesas.push(
+        this.prisma.capaMapa
+          .findMany({
+            where: { tenant_id: tenantId },
+            select: { id: true, nombre: true, color: true, geojson: true, estilos: true, tipo: true },
+          })
+          .then((rows) => {
+            console.log('[buscarGlobal] capas a escanear:', rows.length, 'tipos:', rows.map(r => r.tipo));
+            const matches: any[] = [];
+            for (const c of rows) {
+              const estilos = (c.estilos as Record<string, any>) || {};
+              const features = (c.geojson as any)?.features || [];
+              console.log('[buscarGlobal] capa', c.id, c.nombre, 'features:', features.length);
+              for (const f of features) {
+                const nombreFeature = this.nombreFeature(f);
+                const idFeature = String(this.idFeature(f));
+                const estiloFeature = estilos[idFeature] || estilos[this.normalizarKeyFeature(nombreFeature)] || {};
+                const nombrePersonalizado = estiloFeature.nombre || '';
+
+                // Coincidencia: id exacto, nombre personalizado, nombre original o cualquier propiedad string
+                const idMatch = idFeature.toLowerCase() === termino;
+                const nombreNormalizado = this.normalizarBusqueda(nombreFeature);
+                const nombrePersonalizadoNormalizado = this.normalizarBusqueda(nombrePersonalizado);
+                const propiedadesString = Object.entries(f.properties || {})
+                  .filter(([_, v]) => v != null && typeof v === 'string' && String(v).trim() !== '')
+                  .map(([_, v]) => this.normalizarBusqueda(String(v)));
+
+                const match =
+                  idMatch ||
+                  nombreNormalizado.includes(termino) ||
+                  nombrePersonalizadoNormalizado.includes(termino) ||
+                  propiedadesString.some((p) => p.includes(termino));
+
+                if (!match) continue;
+
+                const color = estiloFeature.color || c.color;
+                const geo = f.geometry;
+                matches.push({
+                  id: `feature-${c.id}-${idFeature}`,
+                  tipo: 'capa_feature',
+                  nombre: nombrePersonalizado || nombreFeature,
+                  descripcion: c.nombre,
+                  capaId: c.id,
+                  featureId: idFeature,
+                  capaNombre: c.nombre,
+                  color,
+                  bbox: geo ? this.bboxFromGeometry(geo) : undefined,
+                  geometry: geo,
+                });
+                if (matches.length >= max) break;
+              }
+              if (matches.length >= max) break;
+            }
+            console.log('[buscarGlobal] matches features:', matches.length);
+            return matches;
+          }),
       );
     }
 
@@ -1721,115 +1770,87 @@ export class MapasService {
       const bNombre = (b.nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
       const aExacto = aNombre.startsWith(termino) ? 2 : aNombre.includes(termino) ? 1 : 0;
       const bExacto = bNombre.startsWith(termino) ? 2 : bNombre.includes(termino) ? 1 : 0;
-      return bExacto - aExacto;
+      if (aExacto !== bExacto) return bExacto - aExacto;
+      // Capas completas primero, luego features
+      if (a.tipo === 'capa' && b.tipo !== 'capa') return -1;
+      if (a.tipo !== 'capa' && b.tipo === 'capa') return 1;
+      return aNombre.localeCompare(bNombre);
     });
 
     return { resultados: resultados.slice(0, max) };
   }
 
-  private filtrarInegiGlobal(geo: any, tipo: TipoCapaInegi, termino: string, max: number): any[] {
-    const features = geo?.features || [];
-    return features
-      .filter((f: any) => {
-        const p = f.properties || {};
-        const nombre = String(
-          p.nomgeo || p.NOMGEO || p.NOMBRE || p.nombre || p.nom_loc || p.NOM_LOC || '',
-        )
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[̀-ͯ]/g, '');
-        return nombre.includes(termino);
-      })
-      .slice(0, max)
-      .map((f: any) => {
-        const p = f.properties || {};
-        const clave = String(
-          p.cvegeo || p.CVEGEO || p.cve_ent || p.CVE_ENT || p.cve_mun || p.CVE_MUN || '',
-        );
-        const nombre = p.nomgeo || p.NOMGEO || p.NOMBRE || p.nombre || p.nom_loc || p.NOM_LOC || clave;
-        return {
-          id: `inegi-${tipo}-${clave}`,
-          tipo: tipo === 'estados' ? 'inegi_estado' : 'inegi_municipio',
-          nombre,
-          descripcion: tipo === 'estados' ? 'Estado' : 'Municipio',
-          clave,
-          bbox: this.bboxFromGeometry(f.geometry),
-          geometry: f.geometry,
-        };
-      });
-  }
-
   async detalleTerritorial(tenantId: string, dto: { tipo: string; id: string; nombre: string; geometry: any; estado_id?: number; municipio_id?: number; seccion?: string; clave?: string }) {
-    const geometry = this.normalizarAMultiPolygon(dto.geometry);
-    if (!geometry || !['Point', 'Polygon', 'MultiPolygon'].includes(geometry.type)) {
-      throw new BadRequestException('La geometría seleccionada no es válida');
-    }
-
-    const bbox = this.bboxFromGeometry(geometry);
-    const esPoligono = ['Polygon', 'MultiPolygon'].includes(geometry.type);
-    const datosOficiales: any = {};
-    let seccionFiltro: string | undefined = dto.seccion;
-
-    if (dto.tipo === 'ine_seccion' && seccionFiltro) {
-      const whereSeccion: any = { tenant_id: tenantId, seccion: seccionFiltro };
-      if (dto.estado_id) whereSeccion.estado_id = dto.estado_id;
-      if (dto.municipio_id) whereSeccion.municipio_id = dto.municipio_id;
-      const seccionDB = await this.prisma.seccionINE.findFirst({
-        where: whereSeccion,
-        orderBy: { seccion: 'asc' },
-      });
-      if (seccionDB) {
-        datosOficiales.padron_2024 = seccionDB.padron_2024;
-        datosOficiales.lista_nominal_2024 = seccionDB.lista_nominal_2024;
-        datosOficiales.distrito_federal = seccionDB.distrito_federal;
-        datosOficiales.distrito_local = seccionDB.distrito_local;
+    try {
+      const geometry = this.normalizarAMultiPolygon(dto.geometry);
+      if (!geometry || !['Point', 'Polygon', 'MultiPolygon'].includes(geometry.type)) {
+        throw new BadRequestException('La geometría seleccionada no es válida');
       }
+
+      const bbox = this.bboxFromGeometry(geometry);
+      const esPoligono = ['Polygon', 'MultiPolygon'].includes(geometry.type);
+      const datosOficiales: any = {};
+      let seccionFiltro: string | undefined = dto.seccion;
+
+      const ultimoResultado = seccionFiltro
+        ? await this.prisma.resultadoHistorico.findFirst({
+            where: { tenant_id: tenantId, seccion: seccionFiltro },
+            orderBy: { anio: 'desc' },
+          })
+        : null;
+      if (ultimoResultado) {
+        datosOficiales.partido_ganador = ultimoResultado.partido_ganador;
+        datosOficiales.votos_ganador = ultimoResultado.votos_ganador;
+        datosOficiales.votos_totales = ultimoResultado.votos_totales;
+        datosOficiales.participacion_pct = ultimoResultado.participacion_pct;
+      }
+
+      let votantes = { count: 0, items: [] };
+      let lideres = { count: 0, items: [] };
+      let apoyos = { count: 0, items: [] };
+      let eventos = { count: 0, items: [] };
+      let peticiones = { count: 0, items: [] };
+
+      if (esPoligono) {
+        const [votantesRes, lideresRes, apoyosRes, eventosRes, peticionesRes] = await Promise.allSettled([
+          this.contarYListarVotantes(tenantId, geometry, seccionFiltro, 10),
+          this.contarYListarLideres(tenantId, geometry, seccionFiltro, 10),
+          this.contarYListarApoyos(tenantId, geometry, seccionFiltro, 10),
+          this.contarEventos(tenantId, geometry, seccionFiltro, 10),
+          this.contarPeticiones(tenantId, geometry, seccionFiltro, 10),
+        ]);
+        votantes = votantesRes.status === 'fulfilled' ? votantesRes.value : { count: 0, items: [] };
+        lideres = lideresRes.status === 'fulfilled' ? lideresRes.value : { count: 0, items: [] };
+        apoyos = apoyosRes.status === 'fulfilled' ? apoyosRes.value : { count: 0, items: [] };
+        eventos = eventosRes.status === 'fulfilled' ? eventosRes.value : { count: 0, items: [] };
+        peticiones = peticionesRes.status === 'fulfilled' ? peticionesRes.value : { count: 0, items: [] };
+
+        [votantesRes, lideresRes, apoyosRes, eventosRes, peticionesRes].forEach((r, i) => {
+          if (r.status === 'rejected') {
+            console.error(`[detalleTerritorial] conteo ${i} falló:`, r.reason?.message || r.reason);
+          }
+        });
+      }
+
+      return {
+        tipo: dto.tipo,
+        id: dto.id,
+        nombre: dto.nombre,
+        geometry,
+        bbox,
+        datos_oficiales: datosOficiales,
+        resumen: {
+          votantes,
+          lideres,
+          apoyos,
+          eventos,
+          peticiones,
+        },
+      };
+    } catch (err: any) {
+      console.error('[detalleTerritorial] ERROR:', err?.message, err?.stack);
+      throw err;
     }
-
-    const ultimoResultado = seccionFiltro
-      ? await this.prisma.resultadoHistorico.findFirst({
-          where: { tenant_id: tenantId, seccion: seccionFiltro },
-          orderBy: { anio: 'desc' },
-        })
-      : null;
-    if (ultimoResultado) {
-      datosOficiales.partido_ganador = ultimoResultado.partido_ganador;
-      datosOficiales.votos_ganador = ultimoResultado.votos_ganador;
-      datosOficiales.votos_totales = ultimoResultado.votos_totales;
-      datosOficiales.participacion_pct = ultimoResultado.participacion_pct;
-    }
-
-    let votantes = { count: 0, items: [] };
-    let lideres = { count: 0, items: [] };
-    let apoyos = { count: 0, items: [] };
-    let eventos = { count: 0, items: [] };
-    let peticiones = { count: 0, items: [] };
-
-    if (esPoligono) {
-      [votantes, lideres, apoyos, eventos, peticiones] = await Promise.all([
-        this.contarYListarVotantes(tenantId, geometry, seccionFiltro, 10),
-        this.contarYListarLideres(tenantId, geometry, seccionFiltro, 10),
-        this.contarYListarApoyos(tenantId, geometry, seccionFiltro, 10),
-        this.contarEventos(tenantId, geometry, seccionFiltro, 10),
-        this.contarPeticiones(tenantId, geometry, seccionFiltro, 10),
-      ]);
-    }
-
-    return {
-      tipo: dto.tipo,
-      id: dto.id,
-      nombre: dto.nombre,
-      geometry,
-      bbox,
-      datos_oficiales: datosOficiales,
-      resumen: {
-        votantes,
-        lideres,
-        apoyos,
-        eventos,
-        peticiones,
-      },
-    };
   }
 
   private async contarYListarVotantes(tenantId: string, geometry: any, seccion?: string, limit = 10) {

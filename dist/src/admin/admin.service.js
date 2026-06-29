@@ -54,6 +54,18 @@ let AdminService = AdminService_1 = class AdminService {
         this.tenantsService = tenantsService;
         this.logger = new common_1.Logger(AdminService_1.name);
     }
+    async limpiarCapasExternas() {
+        const tiposExternos = ['inegi', 'colonia'];
+        const resultado = await this.prisma.capaMapa.deleteMany({
+            where: { tipo: { in: tiposExternos } },
+        });
+        this.logger.log(`Limpieza de capas externas: ${resultado.count} eliminadas`);
+        return {
+            eliminadas: resultado.count,
+            tipos: tiposExternos,
+            mensaje: `Se eliminaron ${resultado.count} capas de fuentes externas (INEGI/SEPOMEX/Nominatim).`,
+        };
+    }
     async createProject(data) {
         const slug = data.slug.trim().toLowerCase();
         const email = data.owner_email.trim().toLowerCase();

@@ -29,14 +29,13 @@ const admin_module_1 = require("./admin/admin.module");
 const uploads_module_1 = require("./uploads/uploads.module");
 const peticiones_module_1 = require("./peticiones/peticiones.module");
 const candidato_module_1 = require("./candidato/candidato.module");
-const inegi_module_1 = require("./inegi/inegi.module");
-const colonias_module_1 = require("./colonias/colonias.module");
 const resultados_historicos_module_1 = require("./resultados-historicos/resultados-historicos.module");
 const encuestas_module_1 = require("./encuestas/encuestas.module");
 const casillas_module_1 = require("./casillas/casillas.module");
 const monitoreo_module_1 = require("./monitoreo/monitoreo.module");
 const proyeccion_module_1 = require("./proyeccion/proyeccion.module");
 const fichas_seccionales_module_1 = require("./fichas-seccionales/fichas-seccionales.module");
+const inteligencia_electoral_module_1 = require("./inteligencia-electoral/inteligencia-electoral.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -66,14 +65,13 @@ exports.AppModule = AppModule = __decorate([
             uploads_module_1.UploadsModule,
             peticiones_module_1.PeticionesModule,
             candidato_module_1.CandidatoModule,
-            inegi_module_1.InegiModule,
-            colonias_module_1.ColoniasModule,
             resultados_historicos_module_1.ResultadosHistoricosModule,
             encuestas_module_1.EncuestasModule,
             casillas_module_1.CasillasModule,
             monitoreo_module_1.MonitoreoModule,
             proyeccion_module_1.ProyeccionModule,
             fichas_seccionales_module_1.FichasSeccionalesModule,
+            inteligencia_electoral_module_1.InteligenciaElectoralModule,
         ],
         controllers: [app_controller_1.AppController],
     })

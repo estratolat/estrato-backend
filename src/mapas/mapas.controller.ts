@@ -8,6 +8,7 @@ import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
 import { ImportarSeccionesExcelDto } from './dto/importar-secciones-excel.dto';
 import { BuscarGlobalDto } from './dto/buscar-global.dto';
 import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
+import { ActualizarEstilosCapaDto } from './dto/actualizar-estilos-capa.dto';
 
 @Controller('mapas')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -36,6 +37,15 @@ export class MapasController {
   @Patch('capas/:id')
   updateCapa(@Param('id') id: string, @Body() data: any, @Req() req: any) {
     return this.mapasService.updateCapa(id, data, req.tenant.id);
+  }
+
+  @Patch('capas/:id/estilos')
+  updateEstilosCapa(
+    @Param('id') id: string,
+    @Body() dto: ActualizarEstilosCapaDto,
+    @Req() req: any,
+  ) {
+    return this.mapasService.updateEstilosCapa(id, dto.estilos, req.tenant.id);
   }
 
   @Delete('capas/:id')
@@ -140,6 +150,7 @@ export class MapasController {
     @Query() dto: BuscarGlobalDto,
     @Req() req: any,
   ) {
+    console.log('[buscarGlobal controller] tenant:', req?.tenant?.id, 'query:', dto);
     const limit = dto.limit ? parseInt(dto.limit, 10) : 15;
     return this.mapasService.buscarGlobal(req.tenant.id, dto.q, limit, dto.tipo);
   }

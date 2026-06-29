@@ -17,16 +17,16 @@ export declare class CasillasService {
         direccion: string | null;
         status: string;
         seccion: string;
-        incidencia: string | null;
-        referencia: string | null;
-        ubicacion: string | null;
+        notas: string | null;
         numero: string | null;
+        ubicacion: string | null;
+        referencia: string | null;
         mesa_directiva: string | null;
         horario_apertura: Date | null;
         horario_cierre: Date | null;
         electores_esperados: number | null;
+        incidencia: string | null;
         responsable_id: string | null;
-        notas: string | null;
     })[]>;
     findOne(id: string, tenantId: string): Promise<{
         responsable: {
@@ -43,16 +43,16 @@ export declare class CasillasService {
         direccion: string | null;
         status: string;
         seccion: string;
-        incidencia: string | null;
-        referencia: string | null;
-        ubicacion: string | null;
+        notas: string | null;
         numero: string | null;
+        ubicacion: string | null;
+        referencia: string | null;
         mesa_directiva: string | null;
         horario_apertura: Date | null;
         horario_cierre: Date | null;
         electores_esperados: number | null;
+        incidencia: string | null;
         responsable_id: string | null;
-        notas: string | null;
     }>;
     buildPayload(data: any): any;
     create(data: any, tenantId: string): Promise<{
@@ -70,16 +70,16 @@ export declare class CasillasService {
         direccion: string | null;
         status: string;
         seccion: string;
-        incidencia: string | null;
-        referencia: string | null;
-        ubicacion: string | null;
+        notas: string | null;
         numero: string | null;
+        ubicacion: string | null;
+        referencia: string | null;
         mesa_directiva: string | null;
         horario_apertura: Date | null;
         horario_cierre: Date | null;
         electores_esperados: number | null;
+        incidencia: string | null;
         responsable_id: string | null;
-        notas: string | null;
     }>;
     update(id: string, data: any, tenantId: string): Promise<{
         responsable: {
@@ -96,16 +96,16 @@ export declare class CasillasService {
         direccion: string | null;
         status: string;
         seccion: string;
-        incidencia: string | null;
-        referencia: string | null;
-        ubicacion: string | null;
+        notas: string | null;
         numero: string | null;
+        ubicacion: string | null;
+        referencia: string | null;
         mesa_directiva: string | null;
         horario_apertura: Date | null;
         horario_cierre: Date | null;
         electores_esperados: number | null;
+        incidencia: string | null;
         responsable_id: string | null;
-        notas: string | null;
     }>;
     updateStatus(id: string, status: string, incidencia: string | undefined, tenantId: string): Promise<{
         id: string;
@@ -117,16 +117,16 @@ export declare class CasillasService {
         direccion: string | null;
         status: string;
         seccion: string;
-        incidencia: string | null;
-        referencia: string | null;
-        ubicacion: string | null;
+        notas: string | null;
         numero: string | null;
+        ubicacion: string | null;
+        referencia: string | null;
         mesa_directiva: string | null;
         horario_apertura: Date | null;
         horario_cierre: Date | null;
         electores_esperados: number | null;
+        incidencia: string | null;
         responsable_id: string | null;
-        notas: string | null;
     }>;
     remove(id: string, tenantId: string): Promise<{
         ok: boolean;

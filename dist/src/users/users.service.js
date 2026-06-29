@@ -71,6 +71,7 @@ const PERMISOS_POR_ROL = {
         'proyeccion',
         'ficha_seccional',
         'historico_electoral',
+        'inteligencia_electoral',
         'usuarios',
         'app_brigada',
     ],
@@ -89,6 +90,7 @@ const PERMISOS_POR_ROL = {
         'proyeccion',
         'ficha_seccional',
         'historico_electoral',
+        'inteligencia_electoral',
         'usuarios',
         'app_brigada',
     ],
@@ -106,6 +108,7 @@ const PERMISOS_POR_ROL = {
         'proyeccion',
         'ficha_seccional',
         'historico_electoral',
+        'inteligencia_electoral',
         'app_brigada',
     ],
     coord_zona: [
@@ -131,6 +134,7 @@ const PERMISOS_POR_ROL = {
         'proyeccion',
         'ficha_seccional',
         'historico_electoral',
+        'inteligencia_electoral',
     ],
     superadmin: ['admin'],
 };
@@ -149,6 +153,7 @@ exports.SECCIONES_DISPONIBLES = [
     { id: 'proyeccion', label: 'Proyección', icon: 'historico' },
     { id: 'ficha_seccional', label: 'Ficha Seccional', icon: 'votantes' },
     { id: 'historico_electoral', label: 'Histórico Electoral', icon: 'historico' },
+    { id: 'inteligencia_electoral', label: 'Inteligencia Electoral', icon: 'historico' },
     { id: 'usuarios', label: 'Configuración / Usuarios', icon: 'seguridad' },
     { id: 'app_brigada', label: 'App de Brigada', icon: 'app' },
 ];

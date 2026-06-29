@@ -215,6 +215,7 @@ model CapaMapa {
   orden      Int            @default(0)
   geojson    Json? // GeoJSON FeatureCollection o Geometry
   metadata   Json? // secciones, líder, votos, etc.
+  estilos    Json?           @default("{}") // colores y nombres por feature
   created_by String?        @db.Uuid
   created_at DateTime       @default(now())
   updated_at DateTime       @updatedAt
@@ -849,6 +850,8 @@ model EleccionActor {
   nombre_visual       String
   color_hex           String?  @db.VarChar(7)
   columna_excel_alias String   @db.VarChar(100)
+  tipo_voto           String   @default("TOTAL") @db.VarChar(30)
+  tipo_actor          String   @default("PARTIDO") @db.VarChar(30)
   orden               Int      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
@@ -860,6 +863,7 @@ model EleccionActor {
 
   @@unique([eleccion_id, columna_excel_alias])
   @@index([tenant_id, eleccion_id])
+  @@index([tenant_id, eleccion_id, tipo_actor])
   @@index([eleccion_id, orden])
   @@map("eleccion_actores")
 }

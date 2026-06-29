@@ -23,6 +23,7 @@ const importar_secciones_ine_dto_1 = require("./dto/importar-secciones-ine.dto")
 const importar_secciones_excel_dto_1 = require("./dto/importar-secciones-excel.dto");
 const buscar_global_dto_1 = require("./dto/buscar-global.dto");
 const detalle_territorial_dto_1 = require("./dto/detalle-territorial.dto");
+const actualizar_estilos_capa_dto_1 = require("./dto/actualizar-estilos-capa.dto");
 let MapasController = class MapasController {
     constructor(mapasService, gisParser) {
         this.mapasService = mapasService;
@@ -39,6 +40,9 @@ let MapasController = class MapasController {
     }
     updateCapa(id, data, req) {
         return this.mapasService.updateCapa(id, data, req.tenant.id);
+    }
+    updateEstilosCapa(id, dto, req) {
+        return this.mapasService.updateEstilosCapa(id, dto.estilos, req.tenant.id);
     }
     removeCapa(id, req) {
         return this.mapasService.removeCapa(id, req.tenant.id);
@@ -78,6 +82,7 @@ let MapasController = class MapasController {
         });
     }
     async buscarGlobal(dto, req) {
+        console.log('[buscarGlobal controller] tenant:', req?.tenant?.id, 'query:', dto);
         const limit = dto.limit ? parseInt(dto.limit, 10) : 15;
         return this.mapasService.buscarGlobal(req.tenant.id, dto.q, limit, dto.tipo);
     }
@@ -162,6 +167,15 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", void 0)
 ], MapasController.prototype, "updateCapa", null);
+__decorate([
+    (0, common_1.Patch)('capas/:id/estilos'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, actualizar_estilos_capa_dto_1.ActualizarEstilosCapaDto, Object]),
+    __metadata("design:returntype", void 0)
+], MapasController.prototype, "updateEstilosCapa", null);
 __decorate([
     (0, common_1.Delete)('capas/:id'),
     __param(0, (0, common_1.Param)('id')),

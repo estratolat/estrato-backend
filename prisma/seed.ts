@@ -9,9 +9,15 @@ async function main() {
   // 1. Crear tenant demo
   const tenant = await prisma.tenant.upsert({
     where: { slug: 'demo' },
-    update: {},
+    update: {
+      nombre_candidato: 'Candidato Demo',
+      cargo_busca: 'Presidente Municipal',
+      plan: 'pro',
+      activo: true,
+    },
     create: {
       slug: 'demo',
+      url_completa: 'https://demo.estra.to',
       nombre_candidato: 'Candidato Demo',
       cargo_busca: 'Presidente Municipal',
       slogan: 'Juntos por un mejor futuro',
@@ -23,12 +29,13 @@ async function main() {
   console.log('✅ Tenant creado:', tenant.slug);
 
   const permisosPorRol: Record<UserRole, string[]> = {
-    [UserRole.owner]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'ine', 'usuarios', 'app_brigada'],
-    [UserRole.candidato]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'ine', 'usuarios', 'app_brigada'],
-    [UserRole.coord_general]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'app_brigada'],
-    [UserRole.coord_zona]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'app_brigada'],
+    [UserRole.owner]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'candidato', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'usuarios', 'app_brigada'],
+    [UserRole.candidato]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'candidato', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'usuarios', 'app_brigada'],
+    [UserRole.coord_general]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'app_brigada'],
+    [UserRole.coord_zona]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'encuestas', 'casillas', 'monitoreo', 'ficha_seccional', 'app_brigada'],
     [UserRole.brigadista]: ['app_brigada'],
-    [UserRole.cm]: ['dashboard', 'crm', 'boletines'],
+    [UserRole.cm]: ['dashboard', 'crm', 'boletines', 'candidato', 'encuestas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral'],
+    [UserRole.superadmin]: ['admin'],
   };
 
   const passwordHash = await bcrypt.hash('demo123', 10);
@@ -68,21 +75,6 @@ async function main() {
     console.log(`✅ Usuario creado: ${user.email} (${user.rol})`);
   }
 
-  // 3. Crear secciones INE de ejemplo (León, Gto)
-  const secciones = [
-    { seccion: '0001', estado: 'Guanajuato', estado_id: 11, municipio: 'León', municipio_id: 20, distrito_federal: 1, distrito_local: 1, padron_2024: 3500, lista_nominal_2024: 3200 },
-    { seccion: '0002', estado: 'Guanajuato', estado_id: 11, municipio: 'León', municipio_id: 20, distrito_federal: 1, distrito_local: 1, padron_2024: 4200, lista_nominal_2024: 3900 },
-    { seccion: '0003', estado: 'Guanajuato', estado_id: 11, municipio: 'León', municipio_id: 20, distrito_federal: 1, distrito_local: 2, padron_2024: 3800, lista_nominal_2024: 3500 },
-  ];
-
-  for (const seccion of secciones) {
-    await prisma.seccionINE.upsert({
-      where: { seccion: seccion.seccion },
-      update: {},
-      create: seccion,
-    });
-  }
-  console.log('✅ Secciones INE creadas');
 
   // 4. Crear resultados históricos de ejemplo
   const resultados = [
@@ -94,13 +86,17 @@ async function main() {
   for (const resultado of resultados) {
     await prisma.resultadoHistorico.upsert({
       where: {
-        seccion_anio: {
+        tenant_id_seccion_anio: {
+          tenant_id: tenant.id,
           seccion: resultado.seccion,
           anio: resultado.anio,
         },
       },
       update: {},
-      create: resultado,
+      create: {
+        ...resultado,
+        tenant_id: tenant.id,
+      },
     });
   }
   console.log('✅ Resultados históricos creados');

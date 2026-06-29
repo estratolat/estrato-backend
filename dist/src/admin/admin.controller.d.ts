@@ -60,4 +60,9 @@ export declare class AdminController {
             rol: import(".prisma/client").$Enums.UserRole;
         };
     }>;
+    limpiarCapasExternas(): Promise<{
+        eliminadas: number;
+        tipos: readonly ["inegi", "colonia"];
+        mensaje: string;
+    }>;
 }

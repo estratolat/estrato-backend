@@ -25,16 +25,16 @@ export declare class FichasSeccionalesController {
             direccion: string | null;
             status: string;
             seccion: string;
-            incidencia: string | null;
-            referencia: string | null;
-            ubicacion: string | null;
+            notas: string | null;
             numero: string | null;
+            ubicacion: string | null;
+            referencia: string | null;
             mesa_directiva: string | null;
             horario_apertura: Date | null;
             horario_cierre: Date | null;
             electores_esperados: number | null;
+            incidencia: string | null;
             responsable_id: string | null;
-            notas: string | null;
         })[];
         metas: ({
             zona: {
@@ -95,16 +95,16 @@ export declare class FichasSeccionalesController {
             direccion: string | null;
             status: string;
             seccion: string;
-            incidencia: string | null;
-            referencia: string | null;
-            ubicacion: string | null;
+            notas: string | null;
             numero: string | null;
+            ubicacion: string | null;
+            referencia: string | null;
             mesa_directiva: string | null;
             horario_apertura: Date | null;
             horario_cierre: Date | null;
             electores_esperados: number | null;
+            incidencia: string | null;
             responsable_id: string | null;
-            notas: string | null;
         })[];
         metas: ({
             zona: {

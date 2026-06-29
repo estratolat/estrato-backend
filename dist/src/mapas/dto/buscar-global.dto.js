@@ -24,7 +24,7 @@ __decorate([
     __metadata("design:type", String)
 ], BuscarGlobalDto.prototype, "limit", void 0);
 __decorate([
-    (0, class_validator_1.IsIn)(['todos', 'ine', 'inegi', 'colonia', 'capa']),
+    (0, class_validator_1.IsIn)(['todos', 'capa', 'capa_feature']),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], BuscarGlobalDto.prototype, "tipo", void 0);

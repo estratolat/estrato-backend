@@ -4,6 +4,7 @@ import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
 import { ImportarSeccionesExcelDto } from './dto/importar-secciones-excel.dto';
 import { BuscarGlobalDto } from './dto/buscar-global.dto';
 import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
+import { ActualizarEstilosCapaDto } from './dto/actualizar-estilos-capa.dto';
 export declare class MapasController {
     private readonly mapasService;
     private readonly gisParser;
@@ -18,12 +19,7 @@ export declare class MapasController {
             visible: boolean;
             orden: number;
         }[];
-        personalizadas: ({
-            creador: {
-                id: string;
-                nombre: string;
-            };
-        } & {
+        personalizadas: {
             id: string;
             created_at: Date;
             updated_at: Date;
@@ -32,12 +28,16 @@ export declare class MapasController {
             color: string;
             tipo: import(".prisma/client").$Enums.CapaMapaTipo;
             orden: number;
-            created_by: string | null;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
+            created_by: string;
+            creador: {
+                id: string;
+                nombre: string;
+            };
+            metadata: import("@prisma/client/runtime/library").JsonValue;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
-        })[];
+            estilos: import("@prisma/client/runtime/library").JsonValue;
+        }[];
     }>;
     findOneCapa(id: string, req: any): Promise<{
         creador: {
@@ -55,9 +55,10 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
+        estilos: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     createCapa(data: any, req: any): Promise<{
         creador: {
@@ -75,9 +76,10 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
+        estilos: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     updateCapa(id: string, data: any, req: any): Promise<{
         creador: {
@@ -95,9 +97,31 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
+        estilos: import("@prisma/client/runtime/library").JsonValue | null;
+    }>;
+    updateEstilosCapa(id: string, dto: ActualizarEstilosCapaDto, req: any): Promise<{
+        creador: {
+            id: string;
+            nombre: string;
+        };
+    } & {
+        id: string;
+        created_at: Date;
+        updated_at: Date;
+        tenant_id: string;
+        nombre: string;
+        color: string;
+        tipo: import(".prisma/client").$Enums.CapaMapaTipo;
+        orden: number;
+        created_by: string | null;
+        metadata: import("@prisma/client/runtime/library").JsonValue | null;
+        origen: import(".prisma/client").$Enums.CapaMapaOrigen;
+        visible: boolean;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
+        estilos: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     removeCapa(id: string, req: any): Promise<{
         id: string;
@@ -110,9 +134,10 @@ export declare class MapasController {
         orden: number;
         created_by: string | null;
         metadata: import("@prisma/client/runtime/library").JsonValue | null;
-        geojson: import("@prisma/client/runtime/library").JsonValue | null;
         origen: import(".prisma/client").$Enums.CapaMapaOrigen;
         visible: boolean;
+        geojson: import("@prisma/client/runtime/library").JsonValue | null;
+        estilos: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     geojson(query: any, req: any): Promise<Record<string, any>>;
     findAllSeccionesINE(estadoId: string, municipioId: string, req: any): Promise<{
@@ -151,9 +176,10 @@ export declare class MapasController {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
+            estilos: import("@prisma/client/runtime/library").JsonValue | null;
         };
         total_secciones: number;
     }>;
@@ -221,9 +247,10 @@ export declare class MapasController {
             orden: number;
             created_by: string | null;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            geojson: import("@prisma/client/runtime/library").JsonValue | null;
             origen: import(".prisma/client").$Enums.CapaMapaOrigen;
             visible: boolean;
+            geojson: import("@prisma/client/runtime/library").JsonValue | null;
+            estilos: import("@prisma/client/runtime/library").JsonValue | null;
         };
         features_count: any;
     }>;

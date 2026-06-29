@@ -1,4 +1,4 @@
-import { IsBoolean, IsHexColor, IsInt, IsOptional, IsString, IsUUID, Length, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsHexColor, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, MaxLength, Min } from 'class-validator';
 
 export class CrearActorDto {
   @IsOptional()
@@ -25,6 +25,14 @@ export class CrearActorDto {
   @IsString()
   @Length(1, 100)
   columna_excel_alias: string;
+
+  @IsOptional()
+  @IsIn(['TOTAL', 'DIFERENCIADO'])
+  tipo_voto?: 'TOTAL' | 'DIFERENCIADO' = 'TOTAL';
+
+  @IsOptional()
+  @IsIn(['PARTIDO', 'CANDIDATO', 'COALICION', 'INDEPENDIENTE'])
+  tipo_actor?: 'PARTIDO' | 'CANDIDATO' | 'COALICION' | 'INDEPENDIENTE' = 'PARTIDO';
 
   @IsOptional()
   @IsInt()
@@ -59,6 +67,14 @@ export class ActualizarActorDto {
   @IsString()
   @Length(1, 100)
   columna_excel_alias?: string;
+
+  @IsOptional()
+  @IsIn(['TOTAL', 'DIFERENCIADO'])
+  tipo_voto?: 'TOTAL' | 'DIFERENCIADO';
+
+  @IsOptional()
+  @IsIn(['PARTIDO', 'CANDIDATO', 'COALICION', 'INDEPENDIENTE'])
+  tipo_actor?: 'PARTIDO' | 'CANDIDATO' | 'COALICION' | 'INDEPENDIENTE';
 
   @IsOptional()
   @IsInt()

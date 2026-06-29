@@ -12,6 +12,7 @@ import {
   UseGuards,
   ParseUUIDPipe,
   ParseBoolPipe,
+  DefaultValuePipe,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
@@ -62,7 +63,7 @@ export class InteligenciaElectoralController {
   // =====================
   @Get('elecciones')
   findAllElecciones(
-    @Query('activas', ParseBoolPipe) activas: boolean,
+    @Query('activas', new DefaultValuePipe(true), ParseBoolPipe) activas: boolean,
     @Req() req: any,
   ) {
     return this.service.findAllElecciones(req.tenant.id, activas);
@@ -141,6 +142,18 @@ export class InteligenciaElectoralController {
     res.send(buffer);
   }
 
+  @Get('elecciones/:id/sabana')
+  async descargarSabana(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.service.generarSabana(req.tenant.id, id);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
   // =====================
   // CARGA MASIVA EXCEL
   // =====================
@@ -170,6 +183,17 @@ export class InteligenciaElectoralController {
     @Req() req: any,
   ) {
     return this.service.getSecciones(req.tenant.id, id);
+  }
+
+  // =====================
+  // MAPA DE SECCIONES COLOREADO POR GANADOR
+  // =====================
+  @Get('elecciones/:id/mapa-secciones')
+  getMapaSecciones(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
+  ) {
+    return this.service.generarMapaSecciones(req.tenant.id, id);
   }
 
   // =====================

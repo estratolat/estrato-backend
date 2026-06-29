@@ -3,10 +3,8 @@ import { MapasController } from './mapas.controller';
 import { MapasService } from './mapas.service';
 import { GisParserService } from './gis-parser.service';
 import { PrismaService } from '../common/services/prisma.service';
-import { InegiModule } from '../inegi/inegi.module';
 
 @Module({
-  imports: [InegiModule],
   controllers: [MapasController],
   providers: [MapasService, GisParserService, PrismaService],
 })

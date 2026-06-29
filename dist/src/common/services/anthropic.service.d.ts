@@ -50,5 +50,30 @@ export declare class AnthropicService {
     private construirPromptGeneracion;
     private parsearHuella;
     private parsearGeneracion;
+    analizarSeccion(datos: {
+        seccion: string;
+        municipio: string;
+        lista_nominal: number;
+        total_votos: number;
+        votos_nulos: number;
+        porcentaje_participacion: number;
+        porcentaje_nulos: number;
+        actor_ganador: string;
+        desglose: Record<string, number>;
+        desglose_casillas: Array<{
+            casilla: string;
+            total_votos: number;
+            votos_nulos: number;
+            estatus_acta?: string;
+            observaciones?: string;
+        }>;
+    }): Promise<{
+        proyeccion_votos: number;
+        nivel_riesgo: 'ALTO' | 'MEDIO' | 'BAJO';
+        auditoria_nulos_observaciones: string;
+        estrategia: string[];
+    }>;
+    private construirPromptSeccion;
+    private parsearAnalisisSeccion;
     private extraerJson;
 }

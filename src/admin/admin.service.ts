@@ -12,6 +12,19 @@ export class AdminService {
     private tenantsService: TenantsService,
   ) {}
 
+  async limpiarCapasExternas() {
+    const tiposExternos = ['inegi', 'colonia'] as const;
+    const resultado = await this.prisma.capaMapa.deleteMany({
+      where: { tipo: { in: tiposExternos as unknown as any } },
+    });
+    this.logger.log(`Limpieza de capas externas: ${resultado.count} eliminadas`);
+    return {
+      eliminadas: resultado.count,
+      tipos: tiposExternos,
+      mensaje: `Se eliminaron ${resultado.count} capas de fuentes externas (INEGI/SEPOMEX/Nominatim).`,
+    };
+  }
+
   async createProject(data: {
     slug: string;
     nombre_candidato: string;

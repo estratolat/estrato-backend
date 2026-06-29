@@ -23,8 +23,8 @@ export declare class PeticionesService {
         created_by: string;
         votante_id: string | null;
         foto_url: string | null;
-        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         prioridad: import(".prisma/client").$Enums.PrioridadPeticion;
+        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         estatus: import(".prisma/client").$Enums.EstatusPeticion;
     })[]>;
     findOne(id: string, tenantId: string): Promise<{
@@ -48,8 +48,8 @@ export declare class PeticionesService {
         created_by: string;
         votante_id: string | null;
         foto_url: string | null;
-        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         prioridad: import(".prisma/client").$Enums.PrioridadPeticion;
+        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         estatus: import(".prisma/client").$Enums.EstatusPeticion;
     }>;
     create(data: any, tenantId: string, userId: string): Promise<{
@@ -72,8 +72,8 @@ export declare class PeticionesService {
         created_by: string;
         votante_id: string | null;
         foto_url: string | null;
-        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         prioridad: import(".prisma/client").$Enums.PrioridadPeticion;
+        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         estatus: import(".prisma/client").$Enums.EstatusPeticion;
     }>;
     updateEstatus(id: string, estatus: string, tenantId: string): Promise<{
@@ -96,8 +96,8 @@ export declare class PeticionesService {
         created_by: string;
         votante_id: string | null;
         foto_url: string | null;
-        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         prioridad: import(".prisma/client").$Enums.PrioridadPeticion;
+        categoria: import(".prisma/client").$Enums.CategoriaPeticion;
         estatus: import(".prisma/client").$Enums.EstatusPeticion;
     }>;
 }

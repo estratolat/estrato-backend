@@ -1,9 +1,10 @@
 import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class CrearEleccionDto {
+  @IsOptional()
   @IsString()
   @MaxLength(200)
-  nombre: string;
+  nombre?: string;
 
   @IsInt()
   @Min(1900)

@@ -32,6 +32,9 @@ let AdminController = class AdminController {
     async createProject(data) {
         return this.adminService.createProject(data);
     }
+    async limpiarCapasExternas() {
+        return this.adminService.limpiarCapasExternas();
+    }
 };
 exports.AdminController = AdminController;
 __decorate([
@@ -57,6 +60,13 @@ __decorate([
     __metadata("design:paramtypes", [create_project_dto_1.CreateProjectDto]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "createProject", null);
+__decorate([
+    (0, common_1.Post)('limpiar-capas-externas'),
+    (0, swagger_1.ApiOperation)({ summary: 'Eliminar capas de fuentes externas (INEGI/Nominatim/SEPOMEX) de la base de datos' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "limpiarCapasExternas", null);
 exports.AdminController = AdminController = __decorate([
     (0, swagger_1.ApiTags)('Admin'),
     (0, common_1.Controller)('admin'),

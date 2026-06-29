@@ -5,6 +5,11 @@ export declare class AdminService {
     private tenantsService;
     private readonly logger;
     constructor(prisma: PrismaService, tenantsService: TenantsService);
+    limpiarCapasExternas(): Promise<{
+        eliminadas: number;
+        tipos: readonly ["inegi", "colonia"];
+        mensaje: string;
+    }>;
     createProject(data: {
         slug: string;
         nombre_candidato: string;
