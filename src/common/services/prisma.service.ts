@@ -7,30 +7,36 @@ function maskUrl(url?: string): string | undefined {
   return url?.replace(/\/\/([^:]+):([^@]+)@/, '//****:****@');
 }
 
+function setSearchParam(url: string, key: string, value: string): string {
+  const base = url.split('?')[0];
+  const params = new URLSearchParams(url.split('?')[1] || '');
+  params.set(key, value);
+  return `${base}?${params.toString()}`;
+}
+
+function removeSearchParam(url: string, key: string): string {
+  const base = url.split('?')[0];
+  const params = new URLSearchParams(url.split('?')[1] || '');
+  params.delete(key);
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 function sanitizeDbUrl(url?: string): string | undefined {
   if (!url) return url;
 
-  // Supabase Pooler: para serverless se debe usar PgBouncer en 6543 con pgbouncer=true.
-  // El pooler de Supabase por defecto es transaction pooler; con el directo 5432 falla en serverless.
+  // Supabase Pooler: usar Transaction Pooler 6543 + pgbouncer=true.
   if (url.includes('pooler.supabase.com:5432')) {
     url = url.replace('pooler.supabase.com:5432', 'pooler.supabase.com:6543');
   }
-  if (url.includes('pooler.supabase.com:6543') && !url.includes('pgbouncer=true')) {
-    const separator = url.includes('?') ? '&' : '?';
-    url = `${url}${separator}pgbouncer=true`;
-  }
+  url = setSearchParam(url, 'pgbouncer', 'true');
 
   // En serverless mantenemos un único PrismaClient y conexiones mínimas.
   const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-  if (!url.includes('connection_limit=')) {
-    const limit = isServerless ? 1 : 5;
-    const separator = url.includes('?') ? '&' : '?';
-    url = `${url}${separator}connection_limit=${limit}`;
-  }
-  if (!url.includes('pool_timeout=')) {
-    const separator = url.includes('?') ? '&' : '?';
-    url = `${url}${separator}pool_timeout=20`;
-  }
+  url = setSearchParam(url, 'connection_limit', isServerless ? '1' : '5');
+
+  // Un pool_timeout corto evita esperar 30s y deja ver el error real rápido.
+  url = setSearchParam(url, 'pool_timeout', isServerless ? '10' : '20');
 
   return url;
 }
@@ -46,6 +52,7 @@ function getPrismaClientConfig() {
   const logLevels: Array<'query' | 'info' | 'warn' | 'error'> = process.env.VERCEL
     ? ['warn', 'error']
     : ['query', 'info', 'warn', 'error'];
+
   return {
     datasources: { db: { url: dbUrl } },
     log: logLevels,
@@ -57,30 +64,27 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
-    super(getPrismaClientConfig());
-
     // Singleton global para serverless: evita crear múltiples PrismaClient por invocación.
     if (globalForPrisma.__estratoPrisma) {
-      // @ts-expect-error: en JavaScript un constructor puede retornar una instancia existente.
-      return globalForPrisma.__estratoPrisma;
+      const existing = globalForPrisma.__estratoPrisma;
+      // @ts-expect-error: en JS un constructor puede retornar una instancia existente.
+      return existing;
     }
+
+    super(getPrismaClientConfig());
     globalForPrisma.__estratoPrisma = this;
   }
 
   async onModuleDestroy() {
-    // En serverless (Vercel) no desconectamos para mantener el pool cálido entre invocaciones.
-    // Solo desconectamos en desarrollo/test.
     if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
       await this.$disconnect();
     }
   }
 
-  // Helper para setear tenant en RLS
   async setTenant(tenantId: string) {
     await this.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
   }
 
-  // Helper para setear rol de usuario en RLS
   async setUserRole(role: string, zonasAsignadas?: string[]) {
     await this.$executeRaw`SELECT set_config('app.user_rol', ${role}, true)`;
     if (zonasAsignadas) {
