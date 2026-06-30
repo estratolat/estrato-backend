@@ -5,9 +5,6 @@
   "author": "ESTRATO Team",
   "private": true,
   "license": "UNLICENSED",
-  "engines": {
-    "node": "20.x"
-  },
   "scripts": {
     "build": "prisma generate && nest build",
     "vercel-build": "prisma generate && nest build",

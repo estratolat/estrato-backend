@@ -181,13 +181,23 @@ async function createApp() {
 }
 
 // For serverless (Vercel)
-async function handler(req: any, res: any) {
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ ok: true, url: req.url, method: req.method, source: 'vercel-handler-cjs', timestamp: new Date().toISOString() }));
-  return;
+export default async function handler(req: any, res: any) {
+  console.log('[vercel handler]', req.method, req.url, Date.now());
+  // Health check rápido que no requiere inicializar Nest para diagnosticar cold-start
+  if (req.url === '/' || req.url === '/health') {
+    console.log('[vercel handler] respondiendo health check directo');
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok', source: 'vercel-handler', timestamp: new Date().toISOString() }));
+    return;
+  }
+
+  console.log('[vercel handler] iniciando createApp');
+  const app = await createApp();
+  console.log('[vercel handler] createApp listo');
+  const server = app.getHttpAdapter().getInstance();
+  return server(req, res);
 }
-export = handler;
 
 // For local development and traditional servers
 async function bootstrap() {
