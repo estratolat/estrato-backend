@@ -62,6 +62,12 @@ export class MapasController {
     return this.mapasService.geojson(req.tenant.id, capas, query);
   }
 
+  // GeoJSON de una sola capa (para carga progresiva en el frontend)
+  @Get('geojson/:capa')
+  geojsonCapa(@Param('capa') capa: string, @Query() query: any, @Req() req: any) {
+    return this.mapasService.geojson(req.tenant.id, [capa], query);
+  }
+
   // Secciones electorales del INE
   @Get('secciones-ine')
   async findAllSeccionesINE(
