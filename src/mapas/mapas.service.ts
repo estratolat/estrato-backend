@@ -1519,108 +1519,106 @@ export class MapasService {
   }
 
   private async estadisticasPorSeccion(tenantId: string) {
-    // Cada query independiente para evitar que un error en una tumbe todo
-    const [votantesRaw, apoyosRaw, lideresRaw, eventosRaw, seccionesINE] = await Promise.all([
-      this.prisma.votante
-        .findMany({
-          where: { tenant_id: tenantId, activo: true, seccion_electoral: { not: null } },
-          select: { seccion_electoral: true, nivel_apoyo: true },
-        })
-        .catch((e: any) => { console.error('[estadisticasPorSeccion] votantes error:', e?.message); return []; }),
-      this.prisma.apoyo
-        .findMany({
-          where: { tenant_id: tenantId },
-          include: { votante: { select: { seccion_electoral: true } } },
-        })
-        .catch((e: any) => { console.error('[estadisticasPorSeccion] apoyos error:', e?.message); return []; }),
-      this.prisma.lider
-        .findMany({
-          where: { tenant_id: tenantId, activo: true },
-          include: { votante: { select: { seccion_electoral: true } } },
-        })
-        .catch((e: any) => { console.error('[estadisticasPorSeccion] lideres error:', e?.message); return []; }),
-      this.prisma.evento
-        .findMany({
-          where: { tenant_id: tenantId },
-          include: { zona: { select: { secciones: true } } },
-        })
-        .catch((e: any) => { console.error('[estadisticasPorSeccion] eventos error:', e?.message); return []; }),
-      this.prisma.seccionINE
-        .findMany({ where: { tenant_id: tenantId } })
-        .catch((e: any) => { console.error('[estadisticasPorSeccion] seccionesINE error:', e?.message); return []; }),
-    ]);
+    // Agregación directamente en PostgreSQL: evita transferir miles de filas al serverless.
+    // CTEs separadas por fuente de datos; LEFT JOIN contra secciones_ine para incluir vacías.
+    const rows = await this.prisma.$queryRaw`
+      WITH votantes_stats AS (
+        SELECT
+          v.seccion_electoral AS seccion,
+          COUNT(*)::int AS votantes,
+          COALESCE(SUM(COALESCE(v.nivel_apoyo, 0)), 0)::int AS votos_estimados,
+          COALESCE(SUM(CASE WHEN v.nivel_apoyo = 1 THEN 1 ELSE 0 END), 0)::int AS n1,
+          COALESCE(SUM(CASE WHEN v.nivel_apoyo = 2 THEN 1 ELSE 0 END), 0)::int AS n2,
+          COALESCE(SUM(CASE WHEN v.nivel_apoyo = 3 THEN 1 ELSE 0 END), 0)::int AS n3,
+          COALESCE(SUM(CASE WHEN v.nivel_apoyo = 4 THEN 1 ELSE 0 END), 0)::int AS n4,
+          COALESCE(SUM(CASE WHEN v.nivel_apoyo = 5 THEN 1 ELSE 0 END), 0)::int AS n5,
+          COALESCE(SUM(CASE WHEN v.nivel_apoyo IS NULL OR v.nivel_apoyo = 0 THEN 1 ELSE 0 END), 0)::int AS n0
+        FROM votantes v
+        WHERE v.tenant_id = ${tenantId}::uuid
+          AND v.activo = true
+          AND v.seccion_electoral IS NOT NULL
+        GROUP BY v.seccion_electoral
+      ),
+      apoyos_stats AS (
+        SELECT v.seccion_electoral AS seccion, COUNT(*)::int AS apoyos
+        FROM apoyos a
+        JOIN votantes v ON v.id = a.votante_id
+        WHERE a.tenant_id = ${tenantId}::uuid
+        GROUP BY v.seccion_electoral
+      ),
+      lideres_stats AS (
+        SELECT v.seccion_electoral AS seccion, COUNT(*)::int AS lideres
+        FROM lideres l
+        JOIN votantes v ON v.id = l.votante_id
+        WHERE l.tenant_id = ${tenantId}::uuid
+          AND l.activo = true
+        GROUP BY v.seccion_electoral
+      ),
+      eventos_stats AS (
+        SELECT UNNEST(z.secciones) AS seccion, COUNT(*)::int AS eventos
+        FROM eventos e
+        JOIN zonas z ON z.id = e.zona_id
+        WHERE e.tenant_id = ${tenantId}::uuid
+        GROUP BY UNNEST(z.secciones)
+      )
+      SELECT
+        s.seccion,
+        COALESCE(s.lista_nominal_2024, 1000) AS lista_nominal,
+        COALESCE(s.padron_2024, 900) AS padron,
+        COALESCE(vs.votantes, 0) AS votantes,
+        COALESCE(vs.votos_estimados, 0) AS votos_estimados,
+        COALESCE(vs.n1, 0) AS n1,
+        COALESCE(vs.n2, 0) AS n2,
+        COALESCE(vs.n3, 0) AS n3,
+        COALESCE(vs.n4, 0) AS n4,
+        COALESCE(vs.n5, 0) AS n5,
+        COALESCE(vs.n0, 0) AS n0,
+        COALESCE(a.apoyos, 0) AS apoyos,
+        COALESCE(l.lideres, 0) AS lideres,
+        COALESCE(e.eventos, 0) AS eventos
+      FROM secciones_ine s
+      LEFT JOIN votantes_stats vs ON vs.seccion = s.seccion
+      LEFT JOIN apoyos_stats a ON a.seccion = s.seccion
+      LEFT JOIN lideres_stats l ON l.seccion = s.seccion
+      LEFT JOIN eventos_stats e ON e.seccion = s.seccion
+      WHERE s.tenant_id = ${tenantId}::uuid
+      ORDER BY votantes DESC
+    `;
 
-    const votantes = Array.isArray(votantesRaw) ? votantesRaw : [];
-    const apoyos = Array.isArray(apoyosRaw) ? apoyosRaw : [];
-    const lideres = Array.isArray(lideresRaw) ? lideresRaw : [];
-    const eventos = Array.isArray(eventosRaw) ? eventosRaw : [];
+    const items = (rows as any[]).map(row => {
+      const niveles_apoyo: Record<number, number> = {};
+      if (row.n1) niveles_apoyo[1] = row.n1;
+      if (row.n2) niveles_apoyo[2] = row.n2;
+      if (row.n3) niveles_apoyo[3] = row.n3;
+      if (row.n4) niveles_apoyo[4] = row.n4;
+      if (row.n5) niveles_apoyo[5] = row.n5;
+      if (row.n0) niveles_apoyo[0] = row.n0;
 
-    const seccionInfo: Record<string, { lista_nominal: number; padron: number }> = {};
-    seccionesINE.forEach(s => {
-      seccionInfo[s.seccion] = {
-        lista_nominal: s.lista_nominal_2024 || 1000,
-        padron: s.padron_2024 || 900,
+      const meta = Math.ceil(row.lista_nominal * 0.34);
+      const ratio = row.votos_estimados / meta;
+      let color = '#EF4444';
+      if (ratio >= 1) color = '#22C55E';
+      else if (ratio >= 0.6) color = '#FACC15';
+
+      return {
+        seccion: row.seccion,
+        votantes: row.votantes,
+        apoyos: row.apoyos,
+        lideres: row.lideres,
+        eventos: row.eventos,
+        votos_estimados: row.votos_estimados,
+        niveles_apoyo,
+        lista_nominal: row.lista_nominal,
+        padron: row.padron,
+        faltan_para_ganar: Math.max(0, meta - row.votos_estimados),
+        color,
       };
-    });
-
-    const map: Record<string, any> = {};
-
-    const getOrCreate = (clave: string) => {
-      if (!map[clave]) {
-        map[clave] = {
-          seccion: clave,
-          votantes: 0,
-          apoyos: 0,
-          lideres: 0,
-          eventos: 0,
-          votos_estimados: 0,
-          niveles_apoyo: {},
-          lista_nominal: seccionInfo[clave]?.lista_nominal || 1000,
-          padron: seccionInfo[clave]?.padron || 900,
-        };
-      }
-      return map[clave];
-    };
-
-    votantes.forEach(v => {
-      const item = getOrCreate(v.seccion_electoral);
-      item.votantes += 1;
-      item.votos_estimados += v.nivel_apoyo || 0;
-      item.niveles_apoyo[v.nivel_apoyo || 0] = (item.niveles_apoyo[v.nivel_apoyo || 0] || 0) + 1;
-    });
-
-    apoyos.forEach(a => {
-      if (a.votante?.seccion_electoral) {
-        getOrCreate(a.votante.seccion_electoral).apoyos += 1;
-      }
-    });
-
-    lideres.forEach(l => {
-      if (l.votante?.seccion_electoral) {
-        getOrCreate(l.votante.seccion_electoral).lideres += 1;
-      }
-    });
-
-    eventos.forEach(e => {
-      (e.zona?.secciones || []).forEach(s => {
-        getOrCreate(s).eventos += 1;
-      });
-    });
-
-    // Calcular color y votos faltantes
-    Object.values(map).forEach((item: any) => {
-      const meta = Math.ceil(item.lista_nominal * 0.34);
-      item.faltan_para_ganar = Math.max(0, meta - item.votos_estimados);
-      const ratio = item.votos_estimados / meta;
-      if (ratio >= 1) item.color = '#22C55E';
-      else if (ratio >= 0.6) item.color = '#FACC15';
-      else item.color = '#EF4444';
     });
 
     return {
       nivel: 'seccion',
-      total_items: Object.keys(map).length,
-      items: Object.values(map).sort((a: any, b: any) => b.votantes - a.votantes),
+      total_items: items.length,
+      items,
     };
   }
 

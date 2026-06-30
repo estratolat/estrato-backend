@@ -269,6 +269,7 @@ model Votante {
   respuestasEncuesta RespuestaEncuesta[]
 
   @@index([tenant_id, seccion_electoral])
+  @@index([tenant_id, activo, seccion_electoral])
   @@index([tenant_id, nivel_apoyo])
   @@index([telefono_hash])
   @@index([origen_qr])
@@ -297,6 +298,7 @@ model Lider {
   eventos      Evento[]
   zonas        Zona[]
 
+  @@index([tenant_id, activo])
   @@index([tenant_id, lider_padre_id])
   @@map("lideres")
 }
@@ -333,6 +335,7 @@ model Evento {
   lider       Lider?       @relation(fields: [lider_id], references: [id])
   asistencias Asistencia[]
 
+  @@index([tenant_id])
   @@index([tenant_id, fecha_inicio])
   @@index([tenant_id, zona_id])
   @@index([qr_code])
@@ -385,6 +388,7 @@ model Apoyo {
   votante    Votante @relation(fields: [votante_id], references: [id], onDelete: Cascade)
   entregador Usuario @relation("ApoyoEntregadoPor", fields: [entregado_por], references: [id])
 
+  @@index([tenant_id])
   @@index([tenant_id, fecha_entrega])
   @@index([votante_id])
   @@index([tipo_apoyo])
