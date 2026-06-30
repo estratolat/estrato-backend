@@ -6,6 +6,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
+import { PrismaService } from './common/services/prisma.service';
 
 @Catch()
 class GlobalExceptionFilter implements ExceptionFilter {
@@ -126,6 +127,19 @@ async function createApp() {
   httpAdapter.get('/health', (req: any, res: any) => {
     res.setHeader('Content-Type', 'application/json');
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Health check de base de datos para diagnosticar conexión a Supabase
+  httpAdapter.get('/health/db', async (req: any, res: any) => {
+    try {
+      const prisma = (app as any).get(PrismaService);
+      const result = await prisma.$queryRaw`SELECT 1 as alive`;
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).json({ status: 'ok', db: 'connected', result, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.setHeader('Content-Type', 'application/json');
+      res.status(503).json({ status: 'error', db: 'disconnected', message: err?.message || String(err), timestamp: new Date().toISOString() });
+    }
   });
 
   // Raw OpenAPI JSON

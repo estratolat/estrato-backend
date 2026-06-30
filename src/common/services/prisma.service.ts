@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
-const globalForPrisma = global as unknown as { __estratoPrisma?: PrismaClient };
+const globalForPrisma = global as unknown as { __estratoPrisma?: PrismaService };
 
 function maskUrl(url?: string): string | undefined {
   return url?.replace(/\/\/([^:]+):([^@]+)@/, '//****:****@');
@@ -30,6 +30,8 @@ function sanitizeDbUrl(url?: string): string | undefined {
     url = url.replace('pooler.supabase.com:5432', 'pooler.supabase.com:6543');
   }
   url = setSearchParam(url, 'pgbouncer', 'true');
+  // PgBouncer no soporta prepared statements; desactivarlos evita errores de protocolo.
+  url = setSearchParam(url, 'prepare_threshold', '0');
 
   // En serverless mantenemos un único PrismaClient y conexiones mínimas.
   const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -59,6 +61,23 @@ function getPrismaClientConfig() {
   };
 }
 
+const MAX_RETRIES = 3;
+const RETRYABLE_MESSAGES = [
+  'EDBHANDLEREXITED',
+  "Can't reach database server",
+  'connection',
+  'pooler',
+  'pool_timeout',
+  'DbHandler exited',
+  'server closed the connection',
+  'Connection terminated',
+];
+
+function isRetryableError(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err);
+  return RETRYABLE_MESSAGES.some(m => msg.toLowerCase().includes(m.toLowerCase()));
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
@@ -66,13 +85,38 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor() {
     // Singleton global para serverless: evita crear múltiples PrismaClient por invocación.
     if (globalForPrisma.__estratoPrisma) {
-      const existing = globalForPrisma.__estratoPrisma;
-      // @ts-expect-error: en JS un constructor puede retornar una instancia existente.
-      return existing;
+      return globalForPrisma.__estratoPrisma;
     }
 
     super(getPrismaClientConfig());
+    this.registerRetryMiddleware();
     globalForPrisma.__estratoPrisma = this;
+  }
+
+  private registerRetryMiddleware() {
+    // Prisma middleware intercepta cada query para reconectar ante fallos transitorios del pooler.
+    this.$use(async (params, next) => {
+      let lastError: unknown;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          return await next(params);
+        } catch (err) {
+          lastError = err;
+          if (!isRetryableError(err) || attempt === MAX_RETRIES - 1) {
+            throw err;
+          }
+          const delay = 200 * (attempt + 1);
+          this.logger.warn(
+            `[Prisma retry ${attempt + 1}/${MAX_RETRIES - 1}] ${(err as any)?.message || err}`
+          );
+          // Forzar reconexión limpia ante errores de pooler.
+          await this.$disconnect().catch(() => {});
+          await new Promise(r => setTimeout(r, delay));
+          await this.$connect().catch(() => {});
+        }
+      }
+      throw lastError;
+    });
   }
 
   async onModuleDestroy() {
@@ -93,9 +137,9 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   }
 }
 
-export function getPrismaClient(): PrismaClient {
+export function getPrismaClient(): PrismaService {
   if (!globalForPrisma.__estratoPrisma) {
-    globalForPrisma.__estratoPrisma = new PrismaClient(getPrismaClientConfig());
+    globalForPrisma.__estratoPrisma = new PrismaService();
   }
   return globalForPrisma.__estratoPrisma;
 }
