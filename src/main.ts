@@ -181,12 +181,13 @@ async function createApp() {
 }
 
 // For serverless (Vercel)
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ ok: true, url: req.url, method: req.method, source: 'vercel-handler-minimal', timestamp: new Date().toISOString() }));
+  res.end(JSON.stringify({ ok: true, url: req.url, method: req.method, source: 'vercel-handler-cjs', timestamp: new Date().toISOString() }));
   return;
 }
+export = handler;
 
 // For local development and traditional servers
 async function bootstrap() {
