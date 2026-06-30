@@ -87,11 +87,22 @@ function toleranciaSimplificacion(bbox: [number, number, number, number] | null)
   return 0.005; // vista muy lejana, simplificar agresivo
 }
 
+function areaGeometria(geometry: any): number {
+  const b = bboxFromGeometry(geometry);
+  const ancho = b[2] - b[0];
+  const alto = b[3] - b[1];
+  return ancho * alto;
+}
+
 function simplificarGeometria(geometry: any, bbox: [number, number, number, number] | null): any {
   if (!geometry) return geometry;
   if (!['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'].includes(geometry.type)) return geometry;
   try {
-    const tol = toleranciaSimplificacion(bbox);
+    const area = areaGeometria(geometry);
+    const tolViewport = toleranciaSimplificacion(bbox);
+    // Para polígonos enormes (estado/municipio completo) simplificamos más agresivamente.
+    const tolGeometria = area > 0.5 ? 0.02 : area > 0.1 ? 0.01 : area > 0.01 ? 0.005 : 0;
+    const tol = Math.max(tolViewport, tolGeometria);
     const simplificado = simplify(geometry, { tolerance: tol, highQuality: false });
     return simplificado.geometry || geometry;
   } catch {
@@ -1053,6 +1064,30 @@ export class MapasService {
   }
 
   private async geojsonSeccionesINE(tenantId: string, query: any = {}, bbox: [number, number, number, number] | null = null) {
+    // Si hay bbox, usar PostGIS para traer solo secciones dentro del viewport.
+    // Esto evita cargar miles de polígonos de todo el país al serverless.
+    if (bbox) {
+      try {
+        const rows = await this.prisma.$queryRaw`
+          SELECT id, seccion, nombre, estado, estado_id, municipio, municipio_id,
+                 distrito_federal, distrito_local, padron_2024, lista_nominal_2024,
+                 casillas_total, meta, observaciones, color, coordenadas
+          FROM secciones_ine
+          WHERE tenant_id = ${tenantId}::uuid
+            AND coordenadas IS NOT NULL
+            AND ST_Intersects(
+              ST_SetSRID(ST_GeomFromGeoJSON(coordenadas::text), 4326),
+              ST_MakeEnvelope(${bbox[0]}, ${bbox[1]}, ${bbox[2]}, ${bbox[3]}, 4326)
+            )
+          LIMIT 1000
+        `;
+        return this.formatearSecciones(tenantId, rows as any[], bbox);
+      } catch (err: any) {
+        console.warn('[geojsonSeccionesINE] PostGIS falló, usando filtro por set:', err?.message);
+        // fallback al método original
+      }
+    }
+
     const baseWhere: any = { tenant_id: tenantId };
 
     // Cache por tenant para secciones INE; se invalida en importaciones.
