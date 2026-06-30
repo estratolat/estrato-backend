@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { withAccelerate } from '@prisma/extension-accelerate';
 
 const globalForPrisma = global as unknown as { __estratoPrisma?: PrismaService };
 
@@ -22,8 +23,23 @@ function removeSearchParam(url: string, key: string): string {
   return qs ? `${base}?${qs}` : base;
 }
 
+function isAccelerateUrl(url?: string): boolean {
+  return Boolean(url?.includes('.accelerate.prisma-data.net'));
+}
+
 function sanitizeDbUrl(url?: string): string | undefined {
   if (!url) return url;
+
+  // Si usamos Prisma Accelerate, no forzar pgbouncer ni limitar conexiones:
+  // Accelerate maneja su propio pool y nos da la URL con el protocolo prisma://.
+  if (isAccelerateUrl(url)) {
+    // La URL de Accelerate NO debe llevar pgbouncer/connection_limit/pool_timeout.
+    url = removeSearchParam(url, 'pgbouncer');
+    url = removeSearchParam(url, 'connection_limit');
+    url = removeSearchParam(url, 'pool_timeout');
+    url = removeSearchParam(url, 'prepare_threshold');
+    return url;
+  }
 
   // Supabase Pooler: usar Transaction Pooler 6543 + pgbouncer=true.
   if (url.includes('pooler.supabase.com:5432')) {
@@ -48,7 +64,7 @@ function getPrismaClientConfig() {
   const dbUrl = sanitizeDbUrl(rawUrl);
 
   if (dbUrl !== rawUrl) {
-    console.log('[PrismaService] DATABASE_URL ajustada para PgBouncer/serverless:', maskUrl(dbUrl));
+    console.log('[PrismaService] DATABASE_URL ajustada:', maskUrl(dbUrl));
   }
 
   const logLevels: Array<'query' | 'info' | 'warn' | 'error'> = process.env.VERCEL
@@ -88,8 +104,22 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
       return globalForPrisma.__estratoPrisma;
     }
 
-    super(getPrismaClientConfig());
-    this.registerRetryMiddleware();
+    const config = getPrismaClientConfig();
+    const usingAccelerate = isAccelerateUrl(config.datasources.db.url);
+
+    if (usingAccelerate) {
+      // @ts-expect-error: PrismaClient extendido con Accelerate tiene tipos extendidos.
+      super(config);
+      const extended = (this as any).$extends(withAccelerate());
+      // Reemplazamos métodos del PrismaClient base por los del cliente extendido.
+      Object.setPrototypeOf(extended, PrismaService.prototype);
+      Object.assign(this, extended);
+      this.logger.log('[PrismaService] Usando Prisma Accelerate para pool de conexiones.');
+    } else {
+      super(config);
+      this.registerRetryMiddleware();
+    }
+
     globalForPrisma.__estratoPrisma = this;
   }
 

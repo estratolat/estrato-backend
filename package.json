@@ -38,6 +38,7 @@
     "@nestjs/platform-express": "^10.3.0",
     "@nestjs/swagger": "^7.2.0",
     "@prisma/client": "^5.8.1",
+    "@prisma/extension-accelerate": "^3.0.1",
     "@tmcw/togeojson": "^7.1.2",
     "@turf/boolean-point-in-polygon": "^7.3.5",
     "@turf/turf": "^7.3.5",
