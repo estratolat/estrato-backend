@@ -3,7 +3,8 @@ import { PrismaClient } from '@prisma/client';
 
 const isServerless = () => process.env.VERCEL || process.env.NODE_ENV === 'production';
 
-let singletonPrisma: PrismaClient | undefined;
+// Singleton global para reutilizar el cliente y el pool de conexiones entre invocaciones serverless.
+const globalPrisma = global as unknown as { prismaClient?: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({
@@ -16,83 +17,60 @@ function createPrismaClient(): PrismaClient {
   });
 }
 
-function getSingletonPrisma(): PrismaClient {
-  if (singletonPrisma) return singletonPrisma;
-
-  const client = createPrismaClient();
-
-  // Añadimos helpers usados por la app directamente sobre el singleton,
-  // así todos los PrismaService inyectados delegan a la misma instancia.
-  const prismaWithHelpers = client as PrismaClient & {
-    setTenant: (tenantId: string) => Promise<void>;
-    setUserRole: (role: string, zonasAsignadas?: string[]) => Promise<void>;
-  };
-
-  prismaWithHelpers.setTenant = async (tenantId: string) => {
-    await client.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
-  };
-
-  prismaWithHelpers.setUserRole = async (role: string, zonasAsignadas?: string[]) => {
-    await client.$executeRaw`SELECT set_config('app.user_rol', ${role}, true)`;
-    if (zonasAsignadas) {
-      await client.$executeRaw`SELECT set_config('app.zonas_asignadas', ${zonasAsignadas.join(',')}, true)`;
-    }
-  };
-
-  if (isServerless()) {
-    singletonPrisma = client;
+function getPrismaClient(): PrismaClient {
+  if (globalPrisma.prismaClient) {
+    return globalPrisma.prismaClient;
   }
-
+  const client = createPrismaClient();
+  if (isServerless()) {
+    globalPrisma.prismaClient = client;
+  }
   return client;
 }
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleDestroy {
-  private readonly delegate: PrismaClient;
+export class PrismaService implements OnModuleDestroy {
+  private readonly prisma: PrismaClient;
 
   constructor() {
-    const delegate = getSingletonPrisma();
-    super({
-      datasources: {
-        db: {
-          url: process.env.DATABASE_URL,
-        },
-      },
-    });
-    this.delegate = delegate;
-
-    // En serverless reemplazamos la instancia creada por `super()` con el singleton,
-    // evitando que cada provider inyectado abra conexiones propias.
-    if (isServerless() && delegate !== this) {
-      return new Proxy(this, {
-        get: (target: any, prop: string | symbol) => {
-          if (prop in target) {
-            return target[prop];
-          }
-          const value = (delegate as any)[prop];
-          return typeof value === 'function' ? value.bind(delegate) : value;
-        },
-      }) as any;
-    }
+    this.prisma = getPrismaClient();
   }
 
   async onModuleDestroy() {
-    // En serverless no desconectamos para mantener el pool cálido entre invocaciones.
-    // Solo desconectamos en desarrollo/test.
+    // En serverless mantenemos el cliente vivo para reutilizar conexiones cálidas.
     if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-      await this.$disconnect();
+      await this.prisma.$disconnect();
     }
   }
 
-  // Helpers para RLS (también expuestos en el singleton)
+  // Helpers para setear tenant en RLS
   async setTenant(tenantId: string) {
-    await this.delegate.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
+    await this.prisma.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
   }
 
+  // Helpers para setear rol de usuario en RLS
   async setUserRole(role: string, zonasAsignadas?: string[]) {
-    await this.delegate.$executeRaw`SELECT set_config('app.user_rol', ${role}, true)`;
+    await this.prisma.$executeRaw`SELECT set_config('app.user_rol', ${role}, true)`;
     if (zonasAsignadas) {
-      await this.delegate.$executeRaw`SELECT set_config('app.zonas_asignadas', ${zonasAsignadas.join(',')}, true)`;
+      await this.prisma.$executeRaw`SELECT set_config('app.zonas_asignadas', ${zonasAsignadas.join(',')}, true)`;
     }
   }
 }
+
+// Aplicamos un Proxy al prototipo para redirigir cualquier propiedad no definida
+// directamente al PrismaClient singleton. Esto mantiene la API existente intacta
+// y garantiza que solo exista una instancia real del cliente en serverless.
+const prismaProto = PrismaService.prototype as any;
+const prismaInstance = getPrismaClient();
+Object.setPrototypeOf(
+  prismaProto,
+  new Proxy(Object.prototype, {
+    get: (_target: any, prop: string | symbol) => {
+      const value = (prismaInstance as any)[prop];
+      if (typeof value === 'function') {
+        return value.bind(prismaInstance);
+      }
+      return value;
+    },
+  }),
+);
