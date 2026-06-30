@@ -77,30 +77,34 @@ let ProyeccionService = class ProyeccionService {
         return { ok: true };
     }
     async resumen(tenantId) {
-        const [totalVotantes, totalApoyos, totalLideres, totalMetas] = await Promise.all([
+        const [totalVotantes, totalApoyos, totalLideres, totalMetas, globalMeta] = await Promise.all([
             this.prisma.votante.count({ where: { tenant_id: tenantId, activo: true } }),
             this.prisma.apoyo.count({ where: { tenant_id: tenantId } }),
             this.prisma.lider.count({ where: { tenant_id: tenantId, activo: true } }),
-            this.prisma.metaVotacion.aggregate({ where: { tenant_id: tenantId }, _sum: { meta_votos: true } }),
+            this.prisma.metaVotacion.aggregate({ where: { tenant_id: tenantId, seccion: null, zona_id: null }, _sum: { meta_votos: true } }),
+            this.prisma.metaVotacion.findFirst({
+                where: { tenant_id: tenantId, seccion: null, zona_id: null },
+                orderBy: { created_at: 'desc' },
+            }),
         ]);
-        const metaTotal = totalMetas._sum.meta_votos || 0;
+        const padronTotal = globalMeta?.meta_lista_nominal || totalVotantes;
+        const metaVotosTotal = globalMeta?.meta_votos || totalMetas._sum.meta_votos || 0;
         return {
-            votantes_registrados: totalVotantes,
+            votantes_registrados: padronTotal,
+            votantes_capturados: totalVotantes,
             apoyos_registrados: totalApoyos,
             lideres_registrados: totalLideres,
-            meta_votos_total: metaTotal,
-            brecha: metaTotal - totalVotantes,
+            meta_votos_total: metaVotosTotal,
+            meta_participacion: globalMeta?.meta_participacion ?? null,
+            meta_lista_nominal: globalMeta?.meta_lista_nominal ?? null,
+            brecha: metaVotosTotal - padronTotal,
+            avance_padron: padronTotal > 0 ? Math.round((totalVotantes / padronTotal) * 1000) / 10 : 0,
         };
     }
     async porSeccion(tenantId) {
         const seccionesRaw = await this.prisma.votante.groupBy({
             by: ['seccion_electoral'],
             where: { tenant_id: tenantId, activo: true },
-            _count: { id: true },
-        });
-        const apoyosRaw = await this.prisma.apoyo.groupBy({
-            by: ['votante_id'],
-            where: { tenant_id: tenantId },
             _count: { id: true },
         });
         const lideresRaw = await this.prisma.lider.findMany({
@@ -110,15 +114,17 @@ let ProyeccionService = class ProyeccionService {
         const metasRaw = await this.prisma.metaVotacion.findMany({
             where: { tenant_id: tenantId },
             orderBy: { created_at: 'desc' },
+            include: { zona: { select: { id: true, nombre: true } } },
         });
         const historicoRaw = await this.prisma.resultadoHistorico.findMany({
             where: { tenant_id: tenantId },
             orderBy: { anio: 'desc' },
         });
-        const apoyosPorVotante = new Set(apoyosRaw.map((a) => a.votante_id));
         const porSeccion = new Map();
         seccionesRaw.forEach((s) => {
-            const sec = s.seccion_electoral || 'Sin sección';
+            if (!s.seccion_electoral)
+                return;
+            const sec = s.seccion_electoral;
             porSeccion.set(sec, {
                 seccion: sec,
                 votantes: s._count.id,
@@ -131,7 +137,9 @@ let ProyeccionService = class ProyeccionService {
             });
         });
         lideresRaw.forEach((l) => {
-            const sec = l.votante?.seccion_electoral || 'Sin sección';
+            if (!l.votante?.seccion_electoral)
+                return;
+            const sec = l.votante.seccion_electoral;
             const r = porSeccion.get(sec) || {
                 seccion: sec,
                 votantes: 0,
@@ -145,16 +153,27 @@ let ProyeccionService = class ProyeccionService {
             r.lideres += 1;
             porSeccion.set(sec, r);
         });
-        Array.from(apoyosPorVotante).forEach((vid) => {
-        });
         metasRaw.forEach((m) => {
-            if (m.seccion && porSeccion.has(m.seccion)) {
-                const r = porSeccion.get(m.seccion);
-                r.meta_votos = m.meta_votos;
-                r.lista_nominal_2024 = m.meta_lista_nominal;
-                r.votos_estimados = Math.round(r.votantes * 0.7 + r.lideres * 10 + r.apoyos * 0.5);
-                r.faltan_para_ganar = Math.max(0, m.meta_votos - r.votos_estimados);
+            const key = m.seccion || (m.zona?.nombre ?? null);
+            if (!key)
+                return;
+            if (!porSeccion.has(key)) {
+                porSeccion.set(key, {
+                    seccion: key,
+                    votantes: 0,
+                    apoyos: 0,
+                    lideres: 0,
+                    lista_nominal_2024: undefined,
+                    meta_votos: undefined,
+                    votos_estimados: 0,
+                    tendencia: 'sin_datos',
+                });
             }
+            const r = porSeccion.get(key);
+            r.meta_votos = m.meta_votos;
+            r.lista_nominal_2024 = m.meta_lista_nominal;
+            r.votos_estimados = Math.round(r.votantes * 0.7 + r.lideres * 10 + r.apoyos * 0.5);
+            r.faltan_para_ganar = Math.max(0, m.meta_votos - r.votos_estimados);
         });
         historicoRaw.forEach((h) => {
             if (porSeccion.has(h.seccion)) {

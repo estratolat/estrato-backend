@@ -50,6 +50,10 @@ export declare class AnthropicService {
     private construirPromptGeneracion;
     private parsearHuella;
     private parsearGeneracion;
+    consultarPolitico(input: {
+        pregunta: string;
+        contexto: Record<string, any>;
+    }): Promise<string>;
     analizarSeccion(datos: {
         seccion: string;
         municipio: string;

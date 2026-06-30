@@ -53,10 +53,14 @@ export declare class ProyeccionService {
     }>;
     resumen(tenantId: string): Promise<{
         votantes_registrados: number;
+        votantes_capturados: number;
         apoyos_registrados: number;
         lideres_registrados: number;
         meta_votos_total: number;
+        meta_participacion: number;
+        meta_lista_nominal: number;
         brecha: number;
+        avance_padron: number;
     }>;
     porSeccion(tenantId: string): Promise<any[]>;
 }
