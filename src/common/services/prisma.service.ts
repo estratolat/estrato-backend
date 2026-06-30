@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { PrismaClient as EdgePrismaClient } from '@prisma/client/edge';
 import { withAccelerate } from '@prisma/extension-accelerate';
 
 const globalForPrisma = global as unknown as { __estratoPrisma?: PrismaService };
@@ -105,21 +106,25 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     }
 
     const config = getPrismaClientConfig();
-    const usingAccelerate = isAccelerateUrl(config.datasources.db.url);
+    const dbUrl = config.datasources.db.url;
+    const usingAccelerate = isAccelerateUrl(dbUrl);
+
+    // Llamada base obligatoria; si usamos Accelerate devolvemos el edge client extendido.
+    super(config);
 
     if (usingAccelerate) {
-      // @ts-expect-error: PrismaClient extendido con Accelerate tiene tipos extendidos.
-      super(config);
-      const extended = (this as any).$extends(withAccelerate());
-      // Reemplazamos métodos del PrismaClient base por los del cliente extendido.
-      Object.setPrototypeOf(extended, PrismaService.prototype);
-      Object.assign(this, extended);
-      this.logger.log('[PrismaService] Usando Prisma Accelerate para pool de conexiones.');
-    } else {
-      super(config);
-      this.registerRetryMiddleware();
+      // Prisma Accelerate requiere el edge client para conectar al protocolo prisma+postgres://.
+      // El cliente base no puede abrir esa URL, así que instanciamos el edge client extendido
+      // y lo devolvemos como instancia de este servicio.
+      const edgeClient = new EdgePrismaClient({
+        datasourceUrl: dbUrl,
+      }).$extends(withAccelerate());
+      console.log('[PrismaService] Usando Prisma Accelerate (edge client) para pool de conexiones.');
+      globalForPrisma.__estratoPrisma = edgeClient as any;
+      return edgeClient as any;
     }
 
+    this.registerRetryMiddleware();
     globalForPrisma.__estratoPrisma = this;
   }
 
