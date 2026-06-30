@@ -764,7 +764,18 @@ export class InteligenciaElectoralService {
       pregunta,
       contextoCampana,
       eleccionId,
-      fuentes = { proyeccion: true, historico: true, votantes: true, sedes: true, eleccion: true },
+      fuentes = {
+        proyeccion: true,
+        historico: true,
+        votantes: true,
+        lideres: true,
+        eventos: true,
+        encuestas: true,
+        sedes: true,
+        monitoreo: true,
+        candidato: true,
+        eleccion: true,
+      },
       filtroTerritorial = { tipo: 'todos', valor: '' },
     } = dto;
 
@@ -775,14 +786,24 @@ export class InteligenciaElectoralService {
       seccionesProyeccion,
       historicos,
       votantesResumen,
+      lideresResumen,
+      eventosResumen,
+      encuestasResumen,
       casillas,
+      monitoreoResumen,
+      candidatoPerfil,
       eleccionContexto,
     ] = await Promise.all([
       ft('proyeccion') ? this.obtenerResumenProyeccion(tenantId) : null,
       ft('proyeccion') ? this.obtenerProyeccionPorSeccion(tenantId) : [],
       ft('historico') ? this.obtenerHistorico(tenantId) : [],
       ft('votantes') ? this.obtenerResumenVotantes(tenantId) : null,
+      ft('lideres') ? this.obtenerResumenLideres(tenantId) : null,
+      ft('eventos') ? this.obtenerResumenEventos(tenantId) : null,
+      ft('encuestas') ? this.obtenerResumenEncuestas(tenantId) : null,
       ft('sedes') ? this.obtenerResumenCasillas(tenantId) : null,
+      ft('monitoreo') ? this.obtenerResumenMonitoreo(tenantId) : null,
+      ft('candidato') ? this.obtenerPerfilCandidato(tenantId) : null,
       ft('eleccion') && eleccionId ? this.obtenerContextoEleccion(tenantId, eleccionId) : null,
     ]);
 
@@ -793,6 +814,7 @@ export class InteligenciaElectoralService {
     };
 
     if (ft('eleccion') && eleccionContexto) contexto.eleccion = eleccionContexto;
+    if (ft('candidato') && candidatoPerfil) contexto.candidato = candidatoPerfil;
     if (ft('proyeccion')) {
       contexto.proyeccion = resumenProyeccion;
       contexto.proyeccion_por_seccion_o_zona = this.aplicarFiltroTerritorial(
@@ -823,6 +845,18 @@ export class InteligenciaElectoralService {
         );
       }
     }
+    if (ft('lideres')) {
+      contexto.lideres = lideresResumen;
+      if (lideresResumen) {
+        contexto.lideres.por_seccion = this.aplicarFiltroTerritorial(
+          lideresResumen.por_seccion || [],
+          filtroTerritorial,
+          'seccion',
+        );
+      }
+    }
+    if (ft('eventos')) contexto.eventos = eventosResumen;
+    if (ft('encuestas')) contexto.encuestas = encuestasResumen;
     if (ft('sedes')) {
       contexto.sedes_casillas = casillas;
       if (casillas) {
@@ -833,6 +867,7 @@ export class InteligenciaElectoralService {
         );
       }
     }
+    if (ft('monitoreo')) contexto.casillas_monitoreo = monitoreoResumen;
 
     let respuesta: string;
     try {
@@ -852,7 +887,12 @@ export class InteligenciaElectoralService {
       contexto_resumen: {
         proyeccion: !!resumenProyeccion,
         votantes: !!votantesResumen,
+        lideres: !!lideresResumen,
+        eventos: !!eventosResumen,
+        encuestas: !!encuestasResumen,
         sedes: !!casillas,
+        monitoreo: !!monitoreoResumen,
+        candidato: !!candidatoPerfil,
         historicos: historicos.length,
         filtro_territorial: filtroTerritorial,
       },
@@ -967,6 +1007,141 @@ export class InteligenciaElectoralService {
         .map((s) => ({ seccion: s.seccion, total: s._count.id }))
         .sort((a, b) => b.total - a.total)
         .slice(0, 30),
+    };
+  }
+
+  private async obtenerResumenLideres(tenantId: string) {
+    const [total, porSeccion, topLideres] = await Promise.all([
+      this.prisma.lider.count({ where: { tenant_id: tenantId, activo: true } }),
+      this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT v.seccion_electoral as seccion, COUNT(l.id)::int as total
+        FROM lideres l
+        JOIN votantes v ON v.id = l.votante_id
+        WHERE l.tenant_id = $1::uuid AND l.activo = true
+        GROUP BY v.seccion_electoral
+        ORDER BY total DESC
+        LIMIT 30
+      `, tenantId),
+      this.prisma.lider.findMany({
+        where: { tenant_id: tenantId, activo: true },
+        orderBy: { score: 'desc' },
+        take: 20,
+        include: { votante: { select: { nombre: true, seccion_electoral: true, municipio: true } } },
+      }),
+    ]);
+
+    return {
+      total,
+      por_seccion: porSeccion || [],
+      top: topLideres.map((l) => ({
+        nombre: l.votante?.nombre || 'Sin nombre',
+        seccion: l.votante?.seccion_electoral || '',
+        municipio: l.votante?.municipio || '',
+        score: l.score,
+        alcance_estimado: l.alcance_estimado,
+      })),
+    };
+  }
+
+  private async obtenerResumenEventos(tenantId: string) {
+    const [total, proximos, porZona, recientes] = await Promise.all([
+      this.prisma.evento.count({ where: { tenant_id: tenantId } }),
+      this.prisma.evento.count({
+        where: { tenant_id: tenantId, fecha_inicio: { gte: new Date() }, status: { not: 'cancelado' } },
+      }),
+      this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT z.nombre as zona, COUNT(e.id)::int as total
+        FROM eventos e
+        LEFT JOIN zonas z ON z.id::text = e.zona_id::text
+        WHERE e.tenant_id = $1::uuid
+        GROUP BY z.nombre
+        ORDER BY total DESC
+        LIMIT 20
+      `, tenantId),
+      this.prisma.evento.findMany({
+        where: { tenant_id: tenantId },
+        orderBy: { fecha_inicio: 'desc' },
+        take: 10,
+        include: { zona: { select: { nombre: true } } },
+      }),
+    ]);
+
+    return {
+      total,
+      proximos,
+      por_zona: porZona || [],
+      recientes: recientes.map((e) => ({
+        nombre: e.nombre,
+        fecha: e.fecha_inicio,
+        zona: e.zona?.nombre || '',
+        status: e.status,
+        asistentes_estimados: e.asistentes_estimados,
+      })),
+    };
+  }
+
+  private async obtenerResumenEncuestas(tenantId: string) {
+    const encuestas = await this.prisma.encuesta.findMany({
+      where: { tenant_id: tenantId },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+      include: { _count: { select: { respuestas: true } } },
+    });
+
+    return {
+      total: encuestas.length,
+      encuestas: encuestas.map((e) => ({
+        id: e.id,
+        titulo: e.titulo,
+        status: e.status,
+        respuestas: e._count.respuestas,
+      })),
+    };
+  }
+
+  private async obtenerResumenMonitoreo(tenantId: string) {
+    const [total, porStatus, conIncidencias] = await Promise.all([
+      this.prisma.casilla.count({ where: { tenant_id: tenantId } }),
+      this.prisma.casilla.groupBy({
+        by: ['status'],
+        where: { tenant_id: tenantId },
+        _count: { id: true },
+      }),
+      this.prisma.casilla.findMany({
+        where: { tenant_id: tenantId, status: { in: ['incidencia', 'cerrada'] } },
+        orderBy: { updated_at: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    return {
+      total,
+      por_status: porStatus.map((s) => ({ status: s.status, total: s._count.id })),
+      incidencias_recientes: conIncidencias.map((c) => ({
+        seccion: c.seccion,
+        ubicacion: c.ubicacion,
+        status: c.status,
+        incidencia: c.incidencia,
+      })),
+    };
+  }
+
+  private async obtenerPerfilCandidato(tenantId: string) {
+    const perfil = await this.prisma.perfilCandidato.findFirst({
+      where: { tenant_id: tenantId },
+    });
+    if (!perfil) return null;
+
+    return {
+      nombre: perfil.nombre,
+      biografia: perfil.biografia,
+      gustos: perfil.gustos,
+      propuesta_central: perfil.propuesta_central,
+      palabras_clave: perfil.palabras_clave,
+      muletillas: perfil.muletillas,
+      frases_recurrentes: perfil.frases_recurrentes,
+      tono: perfil.tono,
+      estilo_redes: perfil.estilo_redes,
     };
   }
 
