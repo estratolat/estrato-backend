@@ -34,7 +34,6 @@ function sanitizeDbUrl(url?: string): string | undefined {
   // Si usamos Prisma Accelerate, no forzar pgbouncer ni limitar conexiones:
   // Accelerate maneja su propio pool y nos da la URL con el protocolo prisma://.
   if (isAccelerateUrl(url)) {
-    // La URL de Accelerate NO debe llevar pgbouncer/connection_limit/pool_timeout.
     url = removeSearchParam(url, 'pgbouncer');
     url = removeSearchParam(url, 'connection_limit');
     url = removeSearchParam(url, 'pool_timeout');
@@ -95,6 +94,28 @@ function isRetryableError(err: unknown): boolean {
   return RETRYABLE_MESSAGES.some(m => msg.toLowerCase().includes(m.toLowerCase()));
 }
 
+function registerRetryMiddleware(client: PrismaClient) {
+  client.$use(async (params, next) => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        return await next(params);
+      } catch (err) {
+        lastError = err;
+        if (!isRetryableError(err) || attempt === MAX_RETRIES - 1) {
+          throw err;
+        }
+        const delay = 200 * (attempt + 1);
+        console.warn(`[Prisma retry ${attempt + 1}/${MAX_RETRIES - 1}] ${(err as any)?.message || err}`);
+        await client.$disconnect().catch(() => {});
+        await new Promise(r => setTimeout(r, delay));
+        await client.$connect().catch(() => {});
+      }
+    }
+    throw lastError;
+  });
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
@@ -105,53 +126,26 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
       return globalForPrisma.__estratoPrisma;
     }
 
-    const config = getPrismaClientConfig();
-    const dbUrl = config.datasources.db.url;
+    const rawUrl = process.env.DATABASE_URL;
+    const dbUrl = sanitizeDbUrl(rawUrl);
     const usingAccelerate = isAccelerateUrl(dbUrl);
-
-    // Llamada base obligatoria; si usamos Accelerate devolvemos el edge client extendido.
-    super(config);
 
     if (usingAccelerate) {
       // Prisma Accelerate requiere el edge client para conectar al protocolo prisma+postgres://.
-      // El cliente base no puede abrir esa URL, así que instanciamos el edge client extendido
-      // y lo devolvemos como instancia de este servicio.
+      // Al devolver un objeto alternativo del constructor (sin llamar a super()) obtenemos
+      // una instancia que responde exactamente como PrismaClient pero usa Accelerate.
       const edgeClient = new EdgePrismaClient({
         datasourceUrl: dbUrl,
       }).$extends(withAccelerate());
       console.log('[PrismaService] Usando Prisma Accelerate (edge client) para pool de conexiones.');
-      globalForPrisma.__estratoPrisma = edgeClient as any;
-      return edgeClient as any;
+      const instance = edgeClient as any as PrismaService;
+      globalForPrisma.__estratoPrisma = instance;
+      return instance;
     }
 
-    this.registerRetryMiddleware();
+    super(getPrismaClientConfig());
+    registerRetryMiddleware(this);
     globalForPrisma.__estratoPrisma = this;
-  }
-
-  private registerRetryMiddleware() {
-    // Prisma middleware intercepta cada query para reconectar ante fallos transitorios del pooler.
-    this.$use(async (params, next) => {
-      let lastError: unknown;
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        try {
-          return await next(params);
-        } catch (err) {
-          lastError = err;
-          if (!isRetryableError(err) || attempt === MAX_RETRIES - 1) {
-            throw err;
-          }
-          const delay = 200 * (attempt + 1);
-          this.logger.warn(
-            `[Prisma retry ${attempt + 1}/${MAX_RETRIES - 1}] ${(err as any)?.message || err}`
-          );
-          // Forzar reconexión limpia ante errores de pooler.
-          await this.$disconnect().catch(() => {});
-          await new Promise(r => setTimeout(r, delay));
-          await this.$connect().catch(() => {});
-        }
-      }
-      throw lastError;
-    });
   }
 
   async onModuleDestroy() {
