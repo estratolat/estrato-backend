@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../common/services/prisma.service';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import { simplify } from '@turf/turf';
 
 const TIPOS_CAPA = ['territorio', 'apoyos', 'lideres', 'votantes', 'secciones_ine', 'eventos', 'recorridos', 'custom'];
 const ORIGENES_CAPA = ['propia', 'externa', 'neutral'];
@@ -16,6 +17,87 @@ const CAPAS_PREDEFINIDAS = [
   { id: 'eventos', tipo: 'eventos', nombre: 'Eventos / mítines', origen: 'propia', color: '#EF4444', visible: true, orden: 6 },
   { id: 'recorridos', tipo: 'recorridos', nombre: 'Recorridos de brigada', origen: 'propia', color: '#06B6D4', visible: false, orden: 7 },
 ];
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+const cacheSeccionesINE = new Map<string, { ts: number; data: any[] }>();
+
+function limpiarCacheExpirada() {
+  const ahora = Date.now();
+  for (const [key, entry] of cacheSeccionesINE.entries()) {
+    if (ahora - entry.ts > CACHE_TTL_MS) cacheSeccionesINE.delete(key);
+  }
+}
+
+function parseBbox(query: any): [number, number, number, number] | null {
+  const raw = query?.bbox || query?.bounds;
+  if (!raw) return null;
+  const parts = String(raw).split(',').map(p => parseFloat(p.trim())).filter(n => !Number.isNaN(n));
+  if (parts.length !== 4) return null;
+  const [minLng, minLat, maxLng, maxLat] = parts;
+  if (minLng > maxLng || minLat > maxLat) return null;
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+function bboxIntersects(a: [number, number, number, number], b: [number, number, number, number]): boolean {
+  return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+}
+
+function puntoEnBbox(lng: number, lat: number, bbox: [number, number, number, number]): boolean {
+  return lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
+}
+
+function featureEnBbox(feature: any, bbox: [number, number, number, number]): boolean {
+  if (!feature?.geometry) return true;
+  const fbbox = bboxFromGeometry(feature.geometry);
+  return bboxIntersects(fbbox, bbox);
+}
+
+function bboxFromGeometry(geometry: any): [number, number, number, number] {
+  if (!geometry || !geometry.coordinates) return [-180, -90, 180, 90];
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  const visit = (coord: any) => {
+    if (Array.isArray(coord) && coord.length >= 2 && typeof coord[0] === 'number' && typeof coord[1] === 'number') {
+      const [lng, lat] = coord;
+      minLng = Math.min(minLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLng = Math.max(maxLng, lng);
+      maxLat = Math.max(maxLat, lat);
+    }
+  };
+  const walk = (node: any) => {
+    if (Array.isArray(node)) {
+      if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') visit(node);
+      else node.forEach(walk);
+    }
+  };
+  walk(geometry.coordinates);
+  if (minLng === Infinity) return [-180, -90, 180, 90];
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+function toleranciaSimplificacion(bbox: [number, number, number, number] | null): number {
+  if (!bbox) return 0.001;
+  const ancho = bbox[2] - bbox[0];
+  const alto = bbox[3] - bbox[1];
+  const area = ancho * alto;
+  if (area <= 0.0001) return 0.000005; // zoom muy cercano, casi no simplificar
+  if (area <= 0.001) return 0.00005;
+  if (area <= 0.01) return 0.0002;
+  if (area <= 0.1) return 0.001;
+  return 0.005; // vista muy lejana, simplificar agresivo
+}
+
+function simplificarGeometria(geometry: any, bbox: [number, number, number, number] | null): any {
+  if (!geometry) return geometry;
+  if (!['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'].includes(geometry.type)) return geometry;
+  try {
+    const tol = toleranciaSimplificacion(bbox);
+    const simplificado = simplify(geometry, { tolerance: tol, highQuality: false });
+    return simplificado.geometry || geometry;
+  } catch {
+    return geometry;
+  }
+}
 
 @Injectable()
 export class MapasService {
@@ -255,6 +337,9 @@ export class MapasService {
       ? await this.updateCapa(capaExistente.id, capaPayload, tenantId)
       : await this.createCapa(capaPayload, tenantId, userId);
 
+    // Invalidar cache de secciones INE para este tenant
+    cacheSeccionesINE.delete(`${tenantId}:ine`);
+
     return { capa, total_secciones: collectionFeatures.length };
   }
 
@@ -406,6 +491,9 @@ export class MapasService {
     if (historicos.length > 0) {
       await this.bulkUpsertResultadosHistoricos(tenantId, historicos);
     }
+
+    // Invalidar cache de secciones INE para este tenant
+    cacheSeccionesINE.delete(`${tenantId}:ine`);
 
     return {
       total_filas: rows.length,
@@ -876,6 +964,7 @@ export class MapasService {
   // GEOJSON POR CAPAS
   // ======================
   async geojson(tenantId: string, capasSolicitadas: string[], query: any) {
+    const bbox = parseBbox(query);
     const capasDisponibles = new Set([...CAPAS_PREDEFINIDAS.map(c => c.id), ...CAPAS_PREDEFINIDAS.map(c => c.tipo)]);
     const personalizadas = await this.prisma.capaMapa.findMany({
       where: { tenant_id: tenantId, visible: true },
@@ -893,29 +982,29 @@ export class MapasService {
       switch (capa) {
         case 'zonas':
         case 'territorio':
-          resultado.zonas = await this.geojsonZonas(tenantId);
+          resultado.zonas = await this.geojsonZonas(tenantId, bbox);
           break;
         case 'lideres':
-          resultado.lideres = await this.geojsonLideres(tenantId);
+          resultado.lideres = await this.geojsonLideres(tenantId, bbox, query);
           break;
         case 'votantes':
-          resultado.votantes = await this.geojsonVotantes(tenantId, query);
+          resultado.votantes = await this.geojsonVotantes(tenantId, bbox, query);
           break;
         case 'apoyos':
-          resultado.apoyos = await this.geojsonApoyos(tenantId, query);
+          resultado.apoyos = await this.geojsonApoyos(tenantId, bbox, query);
           break;
         case 'peticiones':
-          resultado.peticiones = await this.geojsonPeticiones(tenantId, query);
+          resultado.peticiones = await this.geojsonPeticiones(tenantId, bbox, query);
           break;
         case 'eventos':
-          resultado.eventos = await this.geojsonEventos(tenantId);
+          resultado.eventos = await this.geojsonEventos(tenantId, bbox);
           break;
         case 'recorridos':
-          resultado.recorridos = await this.geojsonRecorridos(tenantId);
+          resultado.recorridos = await this.geojsonRecorridos(tenantId, bbox);
           break;
         default:
           // Capa personalizada
-          const custom = await this.geojsonCapaPersonalizada(tenantId, capa);
+          const custom = await this.geojsonCapaPersonalizada(tenantId, capa, bbox);
           if (custom) resultado[capa] = custom;
       }
     }
@@ -923,7 +1012,7 @@ export class MapasService {
     return resultado;
   }
 
-  private async geojsonZonas(tenantId: string) {
+  private async geojsonZonas(tenantId: string, bbox: [number, number, number, number] | null) {
     const zonas = await this.prisma.zona.findMany({
       where: { tenant_id: tenantId },
       include: { lider: { include: { votante: { select: { id: true, nombre: true } } } } },
@@ -934,11 +1023,12 @@ export class MapasService {
 
     const features = zonas
       .filter(z => z.coordenadas)
+      .filter(z => !bbox || featureEnBbox({ geometry: z.coordenadas }, bbox))
       .map(z => {
         const st = stats.find(s => s.zona_id === z.id) || {};
         return {
           type: 'Feature',
-          geometry: z.coordenadas,
+          geometry: simplificarGeometria(z.coordenadas, bbox),
           properties: {
             id: z.id,
             nombre: z.nombre,
@@ -962,15 +1052,23 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonSeccionesINE(tenantId: string, query: any = {}) {
+  private async geojsonSeccionesINE(tenantId: string, query: any = {}, bbox: [number, number, number, number] | null = null) {
     const baseWhere: any = { tenant_id: tenantId };
+
+    // Cache por tenant para secciones INE; se invalida en importaciones.
+    const cacheKey = `${tenantId}:ine`;
+    limpiarCacheExpirada();
+    let secciones = cacheSeccionesINE.get(cacheKey)?.data;
+
+    if (!secciones) {
+      secciones = await this.prisma.seccionINE.findMany({ where: baseWhere });
+      cacheSeccionesINE.set(cacheKey, { ts: Date.now(), data: secciones });
+    }
 
     // Si se pide todo=true, mostrar secciones del municipio de León
     if (query.todo === 'true') {
-      const secciones = await this.prisma.seccionINE.findMany({
-        where: { ...baseWhere, municipio_id: 20 },
-      });
-      return this.formatearSecciones(tenantId, secciones);
+      secciones = secciones.filter(s => s.municipio_id === 20);
+      return this.formatearSecciones(tenantId, secciones, bbox);
     }
 
     const set = new Set<string>();
@@ -986,25 +1084,25 @@ export class MapasService {
 
     if (set.size === 0) {
       // Fallback: mostrar secciones de León si no hay datos del tenant
-      const secciones = await this.prisma.seccionINE.findMany({
-        where: { ...baseWhere, municipio_id: 20 },
-      });
-      return this.formatearSecciones(tenantId, secciones);
+      secciones = secciones.filter(s => s.municipio_id === 20);
+    } else {
+      secciones = secciones.filter(s => set.has(s.seccion));
     }
 
-    const secciones = await this.prisma.seccionINE.findMany({
-      where: { ...baseWhere, seccion: { in: Array.from(set) } },
-    });
-
-    return this.formatearSecciones(tenantId, secciones);
+    return this.formatearSecciones(tenantId, secciones, bbox);
   }
 
-  private async formatearSecciones(tenantId: string, secciones: any[]) {
+  private async formatearSecciones(tenantId: string, secciones: any[], bbox: [number, number, number, number] | null = null) {
     if (secciones.length === 0) {
       return { type: 'FeatureCollection', features: [] };
     }
 
-    const seccionIds = secciones.map((s) => s.seccion);
+    // Filtrado rápido por bbox antes de consultar historial
+    const seccionesFiltradas = bbox
+      ? secciones.filter(s => s.coordenadas && featureEnBbox({ geometry: s.coordenadas }, bbox))
+      : secciones;
+
+    const seccionIds = seccionesFiltradas.map((s) => s.seccion);
 
     const [resultadosHistoricos, casillasCount] = await Promise.all([
       this.prisma.resultadoHistorico.findMany({
@@ -1035,14 +1133,14 @@ export class MapasService {
       casillasPorSeccion[c.seccion] = c._count?.id ?? 0;
     });
 
-    const features = secciones
+    const features = seccionesFiltradas
       .filter(s => s.coordenadas)
       .map(s => {
         const historicos = resultadosPorSeccion[s.seccion] || {};
         const ultimo = historicos[2024] || historicos[2021] || historicos[2018] || null;
         return {
           type: 'Feature',
-          geometry: s.coordenadas,
+          geometry: simplificarGeometria(s.coordenadas, bbox),
           properties: {
             id: s.seccion,
             seccion: s.seccion,
@@ -1069,15 +1167,22 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonLideres(tenantId: string) {
+  private async geojsonLideres(tenantId: string, bbox: [number, number, number, number] | null, query: any) {
+    const limit = Math.min(parseInt(query?.limit) || 500, 2000);
+    const where: any = { tenant_id: tenantId, activo: true };
+    if (query?.score_min) where.score = { gte: parseFloat(query.score_min) };
+
     const lideres = await this.prisma.lider.findMany({
-      where: { tenant_id: tenantId, activo: true },
+      where,
+      take: limit,
       include: { votante: true },
+      orderBy: { score: 'desc' },
     });
 
     const features = lideres
       .map(l => ({ lider: l, coords: this.puntoDesde(l.votante?.coordenadas) }))
       .filter(item => item.coords)
+      .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
       .map(({ lider: l, coords }) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: coords },
@@ -1096,10 +1201,15 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonVotantes(tenantId: string, query: any) {
-    const limit = Math.min(parseInt(query.limit) || 2000, 10000);
+  private async geojsonVotantes(tenantId: string, bbox: [number, number, number, number] | null, query: any) {
+    const limit = Math.min(parseInt(query?.limit) || 500, 2000);
+    const where: any = { tenant_id: tenantId, activo: true, coordenadas: { not: null } };
+    if (query?.zona_id) where.zona_id = query.zona_id;
+    if (query?.sin_coordenadas === 'false') where.coordenadas = { not: null };
+    if (query?.sin_coordenadas === 'true') where.coordenadas = null;
+
     const votantes = await this.prisma.votante.findMany({
-      where: { tenant_id: tenantId, activo: true, coordenadas: { not: null } },
+      where,
       take: limit,
       orderBy: { created_at: 'desc' },
     });
@@ -1107,6 +1217,7 @@ export class MapasService {
     const features = votantes
       .map(v => ({ v, coords: this.puntoDesde(v.coordenadas) }))
       .filter(item => item.coords)
+      .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
       .map(({ v, coords }) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: coords },
@@ -1124,10 +1235,10 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonApoyos(tenantId: string, query: any) {
-    const limit = Math.min(parseInt(query.limit) || 2000, 10000);
-    const desde = query.desde ? new Date(query.desde) : undefined;
-    const hasta = query.hasta ? new Date(query.hasta) : undefined;
+  private async geojsonApoyos(tenantId: string, bbox: [number, number, number, number] | null, query: any) {
+    const limit = Math.min(parseInt(query?.limit) || 500, 2000);
+    const desde = query?.desde ? new Date(query.desde) : undefined;
+    const hasta = query?.hasta ? new Date(query.hasta) : undefined;
 
     const where: any = { tenant_id: tenantId, coordenadas: { not: null } };
     if (desde || hasta) {
@@ -1146,6 +1257,7 @@ export class MapasService {
     const features = apoyos
       .map(a => ({ a, coords: this.puntoDesde(a.coordenadas) }))
       .filter(item => item.coords)
+      .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
       .map(({ a, coords }) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: coords },
@@ -1166,9 +1278,9 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonPeticiones(tenantId: string, query: any) {
-    const limit = Math.min(parseInt(query.limit) || 2000, 10000);
-    const estatus = query.estatus;
+  private async geojsonPeticiones(tenantId: string, bbox: [number, number, number, number] | null, query: any) {
+    const limit = Math.min(parseInt(query?.limit) || 500, 2000);
+    const estatus = query?.estatus;
 
     const where: any = { tenant_id: tenantId, coordenadas: { not: null } };
     if (estatus) where.estatus = estatus;
@@ -1186,6 +1298,7 @@ export class MapasService {
     const features = peticiones
       .map(p => ({ p, coords: this.puntoDesde(p.coordenadas) }))
       .filter(item => item.coords)
+      .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
       .map(({ p, coords }) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: coords },
@@ -1207,15 +1320,18 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonEventos(tenantId: string) {
+  private async geojsonEventos(tenantId: string, bbox: [number, number, number, number] | null) {
+    const limit = 500;
     const eventos = await this.prisma.evento.findMany({
       where: { tenant_id: tenantId },
+      take: limit,
       orderBy: { fecha_inicio: 'asc' },
     });
 
     const features = eventos
       .map(e => ({ e, coords: this.puntoDesde(e.coordenadas) }))
       .filter(item => item.coords)
+      .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
       .map(({ e, coords }) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: coords },
@@ -1235,10 +1351,11 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonRecorridos(tenantId: string) {
+  private async geojsonRecorridos(tenantId: string, bbox: [number, number, number, number] | null) {
     const recorridos = await this.prisma.recorrido.findMany({
       where: { tenant_id: tenantId },
       orderBy: { fecha: 'desc' },
+      take: 200,
       include: { usuario: { select: { id: true, nombre: true } } },
     });
 
@@ -1250,12 +1367,13 @@ export class MapasService {
         return { r, puntos };
       })
       .filter(item => item.puntos.length >= 2)
+      .filter(item => {
+        if (!bbox) return true;
+        return item.puntos.some(([lng, lat]: [number, number]) => puntoEnBbox(lng, lat, bbox));
+      })
       .map(({ r, puntos }) => ({
         type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: puntos,
-        },
+        geometry: simplificarGeometria({ type: 'LineString', coordinates: puntos }, bbox),
         properties: {
           id: r.id,
           usuario_id: r.usuario_id,
@@ -1270,7 +1388,7 @@ export class MapasService {
     return { type: 'FeatureCollection', features };
   }
 
-  private async geojsonCapaPersonalizada(tenantId: string, capaId: string) {
+  private async geojsonCapaPersonalizada(tenantId: string, capaId: string, bbox: [number, number, number, number] | null) {
     const capa = await this.prisma.capaMapa.findFirst({
       where: { id: capaId, tenant_id: tenantId, visible: true },
     });
@@ -1280,6 +1398,15 @@ export class MapasService {
     const collection = geo?.type === 'FeatureCollection'
       ? geo
       : { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: geo, properties: {} }] };
+
+    // Filtrar features fuera del bbox y simplificar geometrías poligonales
+    const featuresFiltradas = (collection.features || [])
+      .filter((f: any) => !bbox || featureEnBbox(f, bbox))
+      .slice(0, 1500)
+      .map((f: any) => ({
+        ...f,
+        geometry: simplificarGeometria(f.geometry, bbox),
+      }));
 
     const esIne = capa.tipo === 'secciones_ine';
     let datosSecciones: Record<string, any> = {};
@@ -1316,7 +1443,7 @@ export class MapasService {
     const estilosCapa = (capa.estilos as Record<string, any>) || {};
 
     // Inyectar propiedades de la capa en cada feature
-    const features = (collection.features || []).map((f: any) => {
+    const features = featuresFiltradas.map((f: any) => {
       const props = f.properties || {};
       const idFeature = this.idFeature(f);
       const nombreFeature = this.nombreFeature(f);
@@ -1688,7 +1815,7 @@ export class MapasService {
                 descripcion: c.tipo,
                 capaId: c.id,
                 color: c.color,
-                bbox: geo ? this.bboxFromGeometry(geo) : undefined,
+                bbox: geo ? bboxFromGeometry(geo) : undefined,
                 geometry: geo,
               };
             });
@@ -1744,7 +1871,7 @@ export class MapasService {
                   featureId: idFeature,
                   capaNombre: c.nombre,
                   color,
-                  bbox: geo ? this.bboxFromGeometry(geo) : undefined,
+                  bbox: geo ? bboxFromGeometry(geo) : undefined,
                   geometry: geo,
                 });
                 if (matches.length >= max) break;
@@ -1787,7 +1914,7 @@ export class MapasService {
         throw new BadRequestException('La geometría seleccionada no es válida');
       }
 
-      const bbox = this.bboxFromGeometry(geometry);
+      const bbox = bboxFromGeometry(geometry);
       const esPoligono = ['Polygon', 'MultiPolygon'].includes(geometry.type);
       const datosOficiales: any = {};
       let seccionFiltro: string | undefined = dto.seccion;
@@ -2004,7 +2131,7 @@ export class MapasService {
   }
 
   private async candidatosEnBBox(tenantId: string, geometry: any, entidad: 'votantes' | 'lideres' | 'apoyos' | 'eventos' | 'peticiones') {
-    const [minLng, minLat, maxLng, maxLat] = this.bboxFromGeometry(geometry);
+    const [minLng, minLat, maxLng, maxLat] = bboxFromGeometry(geometry);
     const tabla = {
       votantes: 'votantes',
       lideres: 'lideres',
@@ -2052,39 +2179,5 @@ export class MapasService {
     } catch {
       return false;
     }
-  }
-
-  private bboxFromGeometry(geometry: any): [number, number, number, number] {
-    if (!geometry || !geometry.coordinates) return [-180, -90, 180, 90];
-
-    let minLng = Infinity;
-    let minLat = Infinity;
-    let maxLng = -Infinity;
-    let maxLat = -Infinity;
-
-    const visit = (coord: any) => {
-      if (Array.isArray(coord) && coord.length >= 2 && typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-        const [lng, lat] = coord;
-        minLng = Math.min(minLng, lng);
-        minLat = Math.min(minLat, lat);
-        maxLng = Math.max(maxLng, lng);
-        maxLat = Math.max(maxLat, lat);
-      }
-    };
-
-    const walk = (node: any) => {
-      if (Array.isArray(node)) {
-        if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
-          visit(node);
-        } else {
-          node.forEach(walk);
-        }
-      }
-    };
-
-    walk(geometry.coordinates);
-
-    if (minLng === Infinity) return [-180, -90, 180, 90];
-    return [minLng, minLat, maxLng, maxLat];
   }
 }

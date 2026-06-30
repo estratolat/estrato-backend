@@ -1,7 +1,8 @@
 .vercel
 .env*
 
-# Compilados
+# Dependencias y compilados
+node_modules
 dist
 
 # Scripts temporales de importación / diagnóstico (contienen credenciales)
