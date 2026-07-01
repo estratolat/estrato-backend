@@ -79,6 +79,8 @@ async function createApp() {
     process.env.FRONTEND_URL,
     'http://localhost:3000',
     'https://frontend-brown-tau-29.vercel.app',
+    'https://estrato-frontend.vercel.app',
+    'https://estrato-frontend-estrato-s-projects.vercel.app',
   ].filter(Boolean);
 
   app.enableCors({
