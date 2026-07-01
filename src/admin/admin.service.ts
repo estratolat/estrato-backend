@@ -145,9 +145,11 @@ export class AdminService {
     return tenants.map((t) => ({
       id: t.id,
       slug: t.slug,
+      dominio_personalizado: t.dominio_personalizado,
       nombre_candidato: t.nombre_candidato,
       cargo_busca: t.cargo_busca,
       slogan: t.slogan,
+      foto_url: t.foto_url,
       plan: t.plan,
       activo: t.activo,
       created_at: t.created_at,
@@ -192,9 +194,11 @@ export class AdminService {
     return {
       id: tenant.id,
       slug: tenant.slug,
+      dominio_personalizado: tenant.dominio_personalizado,
       nombre_candidato: tenant.nombre_candidato,
       cargo_busca: tenant.cargo_busca,
       slogan: tenant.slogan,
+      foto_url: tenant.foto_url,
       plan: tenant.plan,
       activo: tenant.activo,
       created_at: tenant.created_at,
@@ -204,6 +208,52 @@ export class AdminService {
         lideres: tenant._count.lideres,
         eventos: tenant._count.eventos,
       },
+    };
+  }
+
+  async updateProject(
+    id: string,
+    data: {
+      nombre_candidato?: string;
+      cargo_busca?: string;
+      slogan?: string;
+      dominio_personalizado?: string;
+      foto_url?: string;
+      plan?: string;
+      activo?: boolean;
+    },
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) {
+      throw new BadRequestException('Proyecto no encontrado');
+    }
+
+    const updated = await this.prisma.tenant.update({
+      where: { id },
+      data: {
+        nombre_candidato: data.nombre_candidato,
+        cargo_busca: data.cargo_busca,
+        slogan: data.slogan,
+        dominio_personalizado: data.dominio_personalizado,
+        foto_url: data.foto_url,
+        plan: data.plan,
+        activo: data.activo,
+      },
+    });
+
+    this.logger.log(`Proyecto actualizado: ${updated.slug} (${updated.id})`);
+
+    return {
+      id: updated.id,
+      slug: updated.slug,
+      dominio_personalizado: updated.dominio_personalizado,
+      nombre_candidato: updated.nombre_candidato,
+      cargo_busca: updated.cargo_busca,
+      slogan: updated.slogan,
+      foto_url: updated.foto_url,
+      plan: updated.plan,
+      activo: updated.activo,
+      created_at: updated.created_at,
     };
   }
 }

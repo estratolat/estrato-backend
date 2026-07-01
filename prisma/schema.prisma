@@ -24,6 +24,7 @@ model Tenant {
   nombre_candidato      String
   cargo_busca           String? // Alcalde, Diputado Local, etc.
   slogan                String?
+  foto_url              String?  // Logo/foto del candidato (data URL o URL externa)
   plan                  String   @default("basico") // basico, pro, enterprise
   veda_activa           Boolean  @default(false)
   activo                Boolean  @default(true)
@@ -212,6 +213,7 @@ model CapaMapa {
   origen     CapaMapaOrigen @default(propia)
   color      String         @default("#3B82F6")
   visible    Boolean        @default(true)
+  bloqueada  Boolean        @default(false) // Si true, no es seleccionable/interactiva en el mapa
   orden      Int            @default(0)
   geojson    Json? // GeoJSON FeatureCollection o Geometry
   metadata   Json? // secciones, líder, votos, etc.

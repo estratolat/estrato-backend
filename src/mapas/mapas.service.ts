@@ -132,6 +132,7 @@ export class MapasService {
         origen: true,
         color: true,
         visible: true,
+        bloqueada: true,
         orden: true,
         metadata: true,
         estilos: true,
@@ -901,6 +902,7 @@ export class MapasService {
     }
     if (data.color !== undefined) payload.color = String(data.color).trim();
     if (data.visible !== undefined) payload.visible = Boolean(data.visible);
+    if (data.bloqueada !== undefined) payload.bloqueada = Boolean(data.bloqueada);
     if (data.orden !== undefined) payload.orden = this.parsearEntero(data.orden, 0);
 
     if (data.geojson !== undefined) {

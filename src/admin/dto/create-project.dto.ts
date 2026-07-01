@@ -28,8 +28,13 @@ export class CreateProjectDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(250)
+  @MaxLength(500)
   slogan?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200000)
+  foto_url?: string;
 
   @IsEmail()
   owner_email: string;
