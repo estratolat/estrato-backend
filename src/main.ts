@@ -88,7 +88,9 @@ async function createApp() {
       const isAllowed =
         !origin ||
         allowedOrigins.some((o) => origin.startsWith(o)) ||
-        /^https:\/\/frontend-[a-z0-9]+-estrato-s-projects\.vercel\.app$/.test(origin);
+        /^https:\/\/frontend-[a-z0-9]+-estrato-s-projects\.vercel\.app$/.test(origin) ||
+        /^https:\/\/estrato-frontend[a-z0-9-]*\.vercel\.app$/.test(origin) ||
+        /^https:\/\/estrato-frontend[a-z0-9-]*-estrato-s-projects\.vercel\.app$/.test(origin);
       if (isAllowed) {
         callback(null, true);
       } else {
