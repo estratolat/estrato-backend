@@ -7,6 +7,10 @@ export class UpdatePerfilDto {
 
   @IsOptional()
   @IsString()
+  nombre_publico?: string;
+
+  @IsOptional()
+  @IsString()
   biografia?: string;
 
   @IsOptional()

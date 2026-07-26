@@ -31,6 +31,7 @@ export class CandidatoService {
 
     const payload: any = {};
     if (data.nombre !== undefined) payload.nombre = data.nombre;
+    if (data.nombre_publico !== undefined) payload.nombre_publico = data.nombre_publico;
     if (data.biografia !== undefined) payload.biografia = data.biografia;
     if (data.gustos !== undefined) payload.gustos = data.gustos;
     if (data.discurso !== undefined) payload.discurso = data.discurso;

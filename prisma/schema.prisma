@@ -75,6 +75,7 @@ model PerfilCandidato {
   id                  String    @id @default(uuid()) @db.Uuid
   tenant_id           String    @unique @db.Uuid
   nombre              String?
+  nombre_publico      String? // Alias o nombre como lo conoce la gente (ej. "Yaz", "Chucho")
   biografia           String?
   gustos              String? // Texto libre
   discurso            String? // Discurso de referencia escrito
