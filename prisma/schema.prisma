@@ -605,7 +605,8 @@ model Boletin {
   copy_generado     String? // Legacy: texto completo plano (mantener compatibilidad)
   imagen_url        String?
   caption_redes     String?
-  versiones_redes   Json? // 5 versiones de post para redes sociales
+  versiones_redes   Json? // Legacy: 5 versiones de post para redes sociales
+  posts_redes       Json? // Posts por red social: facebook, instagram, tiktok
   aprobado          Boolean   @default(false)
   aprobado_por      String?   @db.Uuid
   fecha_publicacion DateTime?

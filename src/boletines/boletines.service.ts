@@ -85,6 +85,14 @@ export class BoletinesService {
 
     const promptUsuario = JSON.stringify({ tipo: dto.tipo, ...contexto });
 
+    const postsRedes = generado.posts_redes
+      ? {
+          facebook: generado.posts_redes.facebook || { caption: '', hashtags: [], idea_imagen: '' },
+          instagram: generado.posts_redes.instagram || { caption: '', hashtags: [], idea_imagen: '' },
+          tiktok: generado.posts_redes.tiktok || { caption: '', hashtags: [], idea_imagen: '' },
+        }
+      : null;
+
     const boletin = await this.prisma.boletin.create({
       data: {
         tenant_id: tenantId,
@@ -99,6 +107,7 @@ export class BoletinesService {
           dto.tipo === 'redes' && Array.isArray(generado.versiones_redes) && generado.versiones_redes.length > 0
             ? (generado.versiones_redes as any)
             : null,
+        posts_redes: postsRedes ? (postsRedes as any) : null,
         imagen_url: null,
         aprobado: false,
       },

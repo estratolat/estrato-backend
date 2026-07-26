@@ -76,6 +76,11 @@ export class AnthropicService {
     hashtags?: string[];
     idea_imagen?: string;
     versiones_redes?: { caption: string; hashtags: string[]; idea_imagen: string }[];
+    posts_redes?: {
+      facebook: { caption: string; hashtags: string[]; idea_imagen: string };
+      instagram: { caption: string; hashtags: string[]; idea_imagen: string };
+      tiktok: { caption: string; hashtags: string[]; idea_imagen: string };
+    };
   }> {
     const esRedes = contexto.tipo === 'redes';
     const system = esRedes
@@ -161,55 +166,47 @@ HUELLA DE COMUNICACIÓN:
 
 INFORMACIÓN DEL MENSAJE:
 - Tema: ${c.tema || 'No especificado'}
-- Qué: ${c.que || 'No especificado'}
-- Quién: ${c.quien || 'No especificado'}
-- Cómo: ${c.como || 'No especificado'}
-- Cuándo: ${c.cuando || 'No especificado'}
-- Dónde: ${c.donde || 'No especificado'}
-- Por qué: ${c.por_que || 'No especificado'}
-- Para qué: ${c.para_que || 'No especificado'}`;
+- ¿Qué pasó?: ${c.que || 'No especificado'}
+- ¿Quién participó?: ${c.quien || 'No especificado'}
+- ¿Cómo sucedió el hecho?: ${c.como || 'No especificado'}
+- ¿Cuándo?: ${c.cuando || 'No especificado'}
+- ¿Dónde?: ${c.donde || 'No especificado'}
+- ¿Por qué?: ${c.por_que || 'No especificado'}
+- ¿Para qué?: ${c.para_que || 'No especificado'}`;
 
     const nombreRedes = contexto.perfil.nombre || 'el candidato';
 
     if (contexto.tipo === 'redes') {
       return `${baseInfo}
 
-INSTRUCCIÓN: Crea 5 versiones de un post para redes sociales en PRIMERA PERSONA de ${nombreRedes}, usando sus muletillas, frases recurrentes, palabras clave y tono. Cada versión debe sentirse auténtica, no como texto de IA genérico. Responde las 7 preguntas básicas de forma natural dentro del texto.
+INSTRUCCIÓN: Crea 3 posts para redes sociales en PRIMERA PERSONA de ${nombreRedes}, uno para Facebook, uno para Instagram y uno para TikTok. Usa sus muletillas, frases recurrentes, palabras clave y tono. Cada post debe sentirse auténtico, no como texto de IA genérico, y responder las 7 preguntas de forma natural.
 
-REGLAS:
-- Cada versión debe ser distinta: enfoque, ángulo, longitud o tono ligeramente diferente.
-- Menciona a ${nombreRedes} en cada caption al menos una vez.
-- Incluye hashtags relevantes y una idea de imagen para cada versión.
+REGLAS POR RED SOCIAL:
+- Facebook: texto de 80-150 palabras, tono conversacional y cercano, ideal para compartir y comentar. Incluye 4-6 hashtags.
+- Instagram: texto de 60-120 palabras, más visual y emotivo, con emojis naturales. Incluye 8-12 hashtags separados al final.
+- TikTok: texto muy corto de 30-80 palabras, directo, con gancho, energético y orientado a video. Incluye 3-5 hashtags trendy.
+- Menciona a ${nombreRedes} al menos una vez en cada post.
+- Cada post debe incluir una idea de imagen o video acorde a la red social.
 
 Genera UN ÚNICO OBJETO JSON:
 {
-  "versiones": [
-    {
-      "caption": "Texto del caption versión 1 de 80-150 palabras en primera persona",
+  "posts_redes": {
+    "facebook": {
+      "caption": "Texto del post para Facebook",
       "hashtags": ["#...", "#..."],
-      "idea_imagen": "Descripción de imagen o diseño para la versión 1"
+      "idea_imagen": "Idea de imagen o video para Facebook"
     },
-    {
-      "caption": "Versión 2 del caption",
+    "instagram": {
+      "caption": "Texto del post para Instagram",
       "hashtags": ["#...", "#..."],
-      "idea_imagen": "Idea de imagen versión 2"
+      "idea_imagen": "Idea de imagen o carrusel para Instagram"
     },
-    {
-      "caption": "Versión 3 del caption",
+    "tiktok": {
+      "caption": "Texto del post para TikTok",
       "hashtags": ["#...", "#..."],
-      "idea_imagen": "Idea de imagen versión 3"
-    },
-    {
-      "caption": "Versión 4 del caption",
-      "hashtags": ["#...", "#..."],
-      "idea_imagen": "Idea de imagen versión 4"
-    },
-    {
-      "caption": "Versión 5 del caption",
-      "hashtags": ["#...", "#..."],
-      "idea_imagen": "Idea de imagen versión 5"
+      "idea_imagen": "Idea de video para TikTok"
     }
-  ]
+  }
 }`;
     }
 
@@ -217,7 +214,7 @@ Genera UN ÚNICO OBJETO JSON:
 
     return `${baseInfo}
 
-INSTRUCCIÓN: Redacta un boletín de campaña completo en la voz del candidato. Usa sus muletillas, frases recurrentes, palabras clave y tono. El boletín debe responder las 7 preguntas básicas (qué, quién, cómo, cuándo, dónde, por qué, para qué) de forma clara y fluida. Debe sonar como si el candidato lo estuviera diciendo, no como texto de IA genérico.
+INSTRUCCIÓN: Redacta un boletín de campaña completo en la voz del candidato. Usa sus muletillas, frases recurrentes, palabras clave y tono. El boletín debe responder las 7 preguntas básicas (qué pasó, quién participó, cómo sucedió el hecho, cuándo, dónde, por qué, para qué) de forma clara y fluida. Debe sonar como si el candidato lo estuviera diciendo, no como texto de IA genérico.
 
 REGLAS DE PERSONALIZACIÓN:
 - El candidato se llama **${nombreCandidato}**; menciónalo por nombre al menos 2 veces en el desarrollo y una vez en la bajada o título.
@@ -225,14 +222,24 @@ REGLAS DE PERSONALIZACIÓN:
 
 Estructura obligatoria:
 - Título: llamativo, alineado al tema e idealmente con el nombre del candidato.
-- Bajada: 1-2 oraciones que resuman el mensaje central y enganchen a leer el desarrollo.
-- Desarrollo: cuerpo completo de 250-400 palabras en voz del candidato. Incluye apertura con gancho, qué se anuncia, quién participa, cómo se hará, cuándo, dónde, por qué es importante, para qué sirve, y cierre con llamado a la acción.
+- Bajada: 1-2 oraciones que resumen el mensaje central y enganchen a leer el desarrollo.
+- Desarrollo: cuerpo completo de 250-400 palabras en voz del candidato. Incluye apertura con gancho, qué pasó, quién participó, cómo sucedió el hecho, cuándo, dónde, por qué es importante, para qué sirve, y cierre con llamado a la acción.
+
+Además, genera 3 posts cortos derivados del boletín, uno para cada red social:
+- Facebook: tono conversacional, 80-150 palabras, 4-6 hashtags.
+- Instagram: tono visual y emotivo, 60-120 palabras, emojis naturales, 8-12 hashtags.
+- TikTok: tono directo y energético, 30-80 palabras, gancho fuerte, 3-5 hashtags.
 
 Genera UN ÚNICO OBJETO JSON:
 {
   "titulo": "Título atractivo del boletín con el nombre de ${nombreCandidato}",
   "bajada": "Bajada de 1-2 oraciones que resuma el mensaje principal y mencione a ${nombreCandidato}",
-  "desarrollo": "Cuerpo completo del boletín de 250-400 palabras en voz del candidato, mencionando a ${nombreCandidato}"
+  "desarrollo": "Cuerpo completo del boletín de 250-400 palabras en voz del candidato, mencionando a ${nombreCandidato}",
+  "posts_redes": {
+    "facebook": { "caption": "...", "hashtags": ["#..."], "idea_imagen": "..." },
+    "instagram": { "caption": "...", "hashtags": ["#..."], "idea_imagen": "..." },
+    "tiktok": { "caption": "...", "hashtags": ["#..."], "idea_imagen": "..." }
+  }
 }`;
   }
 
@@ -266,34 +273,42 @@ Genera UN ÚNICO OBJETO JSON:
 
   private parsearGeneracion(text: string, esRedes: boolean) {
     const clean = this.extraerJson(text);
+    const normalizarPost = (v: any) => ({
+      caption: String(v.caption || v.texto || ''),
+      hashtags: Array.isArray(v.hashtags) ? v.hashtags : [],
+      idea_imagen: String(v.idea_imagen || ''),
+    });
+    const extraerPostsRedes = (raw: any) => {
+      const posts = raw?.posts_redes || {};
+      return {
+        facebook: normalizarPost(posts.facebook || {}),
+        instagram: normalizarPost(posts.instagram || {}),
+        tiktok: normalizarPost(posts.tiktok || {}),
+      };
+    };
+
     try {
       const parsed = JSON.parse(clean);
       if (esRedes) {
+        const postsRedes = extraerPostsRedes(parsed);
+
+        // Fallback legacy: si el modelo devolvió versiones, convertirlas a array
         const versionesRaw = Array.isArray(parsed.versiones)
           ? parsed.versiones
           : parsed.versiones
           ? [parsed.versiones]
           : [];
-        const versiones = versionesRaw.map((v: any) => ({
-          caption: String(v.caption || v.texto || ''),
-          hashtags: Array.isArray(v.hashtags) ? v.hashtags : [],
-          idea_imagen: String(v.idea_imagen || ''),
-        }));
-
-        // Fallback: si el modelo devolvió caption plano, generar una única versión
+        const versiones = versionesRaw.map(normalizarPost);
         if (versiones.length === 0 && (parsed.caption || parsed.texto)) {
-          versiones.push({
-            caption: String(parsed.caption || parsed.texto || ''),
-            hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags : [],
-            idea_imagen: String(parsed.idea_imagen || ''),
-          });
+          versiones.push(normalizarPost(parsed));
         }
 
         return {
-          caption: versiones[0]?.caption || '',
-          hashtags: versiones[0]?.hashtags || [],
-          idea_imagen: versiones[0]?.idea_imagen || '',
+          caption: postsRedes.facebook.caption || versiones[0]?.caption || '',
+          hashtags: postsRedes.facebook.hashtags || versiones[0]?.hashtags || [],
+          idea_imagen: postsRedes.facebook.idea_imagen || versiones[0]?.idea_imagen || '',
           versiones_redes: versiones,
+          posts_redes: postsRedes,
         };
       }
       return {
@@ -301,12 +316,18 @@ Genera UN ÚNICO OBJETO JSON:
         bajada: String(parsed.bajada || ''),
         desarrollo: String(parsed.desarrollo || ''),
         texto: String(parsed.desarrollo || parsed.texto || ''), // fallback de compatibilidad
+        posts_redes: extraerPostsRedes(parsed),
       };
     } catch (e) {
       this.logger.error('Error parseando generación de Anthropic:', e, text);
+      const vacios = {
+        facebook: { caption: '', hashtags: [], idea_imagen: '' },
+        instagram: { caption: '', hashtags: [], idea_imagen: '' },
+        tiktok: { caption: '', hashtags: [], idea_imagen: '' },
+      };
       return esRedes
-        ? { caption: clean, hashtags: [], idea_imagen: '', versiones_redes: [] }
-        : { titulo: 'Boletín generado', bajada: '', desarrollo: clean, texto: clean };
+        ? { caption: clean, hashtags: [], idea_imagen: '', versiones_redes: [], posts_redes: vacios }
+        : { titulo: 'Boletín generado', bajada: '', desarrollo: clean, texto: clean, posts_redes: vacios };
     }
   }
 
