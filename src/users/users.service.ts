@@ -37,6 +37,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'ficha_seccional',
     'historico_electoral',
     'inteligencia_electoral',
+    'opositores',
     'usuarios',
     'app_brigada',
   ],
@@ -57,6 +58,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'ficha_seccional',
     'historico_electoral',
     'inteligencia_electoral',
+    'opositores',
     'usuarios',
     'app_brigada',
   ],
@@ -76,6 +78,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'ficha_seccional',
     'historico_electoral',
     'inteligencia_electoral',
+    'opositores',
     'app_brigada',
   ],
   coord_zona: [
@@ -104,6 +107,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'ficha_seccional',
     'historico_electoral',
     'inteligencia_electoral',
+    'opositores',
   ],
   encargado_peticiones: [
     'dashboard',
@@ -135,6 +139,7 @@ export const SECCIONES_DISPONIBLES = [
   { id: 'ficha_seccional', label: 'Ficha Seccional', icon: 'votantes', color: '#C2410C' },
   { id: 'historico_electoral', label: 'Histórico Electoral', icon: 'historico', color: '#4338CA' },
   { id: 'inteligencia_electoral', label: 'Inteligencia Electoral', icon: 'historico', color: '#9333EA' },
+  { id: 'opositores', label: 'Opositores', icon: 'opositores', color: '#DC2626' },
   { id: 'usuarios', label: 'Configuración / Usuarios', icon: 'seguridad', color: '#475569' },
   { id: 'app_brigada', label: 'App de Brigada', icon: 'app', color: '#000000' },
 ];
