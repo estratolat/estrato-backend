@@ -28,6 +28,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ProyeccionModule } from './proyeccion/proyeccion.module';
 import { FichasSeccionalesModule } from './fichas-seccionales/fichas-seccionales.module';
 import { InteligenciaElectoralModule } from './inteligencia-electoral/inteligencia-electoral.module';
+import { OpositoresModule } from './opositores/opositores.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { InteligenciaElectoralModule } from './inteligencia-electoral/inteligenc
     ProyeccionModule,
     FichasSeccionalesModule,
     InteligenciaElectoralModule,
+    OpositoresModule,
   ],
   controllers: [AppController],
 })

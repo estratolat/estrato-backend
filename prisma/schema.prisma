@@ -64,6 +64,7 @@ model Tenant {
   actores              EleccionActor[]
   resultadosCasillas   ResultadoCasilla[]
   proyecciones         SeccionAnalisisProyeccion[]
+  opositores           Opositor[]
 
   @@map("tenants")
 }
@@ -1054,6 +1055,29 @@ model ResultadoCasilla {
   @@index([tenant_id, eleccion_id, municipio_id])
   @@index([tenant_id, eleccion_id, estado_id])
   @@map("resultados_casillas")
+}
+
+// ==========================================
+// OPOSITORES - Rivales y contrincantes electorales
+// ==========================================
+model Opositor {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_id       String   @db.Uuid
+  nombre          String
+  partido         String?
+  foto_url        String?
+  nivel_rivalidad Int      @default(1) // 1 = retador principal, 2 = segundo, 3 = tercero
+  redes_sociales  Json?    // [{ red: 'facebook', url: '...' }]
+  notas           String?
+  activo          Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, nivel_rivalidad])
+  @@index([tenant_id, activo])
+  @@map("opositores")
 }
 
 model SeccionAnalisisProyeccion {
