@@ -32,5 +32,13 @@ export class CreateOpositorDto {
 
   @IsOptional()
   @IsString()
+  descripcion?: string;
+
+  @IsOptional()
+  @IsString()
+  ficha_negativa?: string;
+
+  @IsOptional()
+  @IsString()
   notas?: string;
 }

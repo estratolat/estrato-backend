@@ -23,6 +23,8 @@ export class OpositoresService {
         foto_url: dto.foto_url || null,
         nivel_rivalidad: dto.nivel_rivalidad,
         redes_sociales: (dto.redes_sociales || []) as any,
+        descripcion: dto.descripcion || null,
+        ficha_negativa: dto.ficha_negativa || null,
         notas: dto.notas || null,
       },
     });
@@ -40,6 +42,8 @@ export class OpositoresService {
     if (dto.foto_url !== undefined) data.foto_url = dto.foto_url || null;
     if (dto.nivel_rivalidad !== undefined) data.nivel_rivalidad = dto.nivel_rivalidad;
     if (dto.redes_sociales !== undefined) data.redes_sociales = (dto.redes_sociales || []) as any;
+    if (dto.descripcion !== undefined) data.descripcion = dto.descripcion || null;
+    if (dto.ficha_negativa !== undefined) data.ficha_negativa = dto.ficha_negativa || null;
     if (dto.notas !== undefined) data.notas = dto.notas || null;
 
     return this.prisma.opositor.update({

@@ -1072,6 +1072,8 @@ model Opositor {
   foto_url        String?
   nivel_rivalidad Int      @default(1) // 1 = retador principal, 2 = segundo, 3 = tercero
   redes_sociales  Json?    // [{ red: 'facebook', url: '...' }]
+  descripcion     String? // Perfil/descripción general del opositor
+  ficha_negativa  String? // Debilidades, polémicas y líneas de ataque para contrastar con IA
   notas           String?
   activo          Boolean  @default(true)
   created_at      DateTime @default(now())
