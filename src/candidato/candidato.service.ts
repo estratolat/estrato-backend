@@ -33,6 +33,7 @@ export class CandidatoService {
     if (data.nombre !== undefined) payload.nombre = data.nombre;
     if (data.nombre_publico !== undefined) payload.nombre_publico = data.nombre_publico;
     if (data.cargo !== undefined) payload.cargo = data.cargo;
+    if (data.email !== undefined) payload.email = data.email;
     if (data.foto_url !== undefined) payload.foto_url = data.foto_url;
     if (data.redes_sociales !== undefined) payload.redes_sociales = data.redes_sociales as any;
     if (data.biografia !== undefined) payload.biografia = data.biografia;

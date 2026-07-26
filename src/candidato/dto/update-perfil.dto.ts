@@ -24,6 +24,10 @@ export class UpdatePerfilDto {
 
   @IsOptional()
   @IsString()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
   foto_url?: string;
 
   @IsOptional()
