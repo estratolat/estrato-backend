@@ -77,6 +77,9 @@ model PerfilCandidato {
   tenant_id           String    @unique @db.Uuid
   nombre              String?
   nombre_publico      String? // Alias o nombre como lo conoce la gente (ej. "Yaz", "Chucho")
+  cargo               String? // Presidente Municipal, Diputado, Síndico, etc.
+  foto_url            String? // URL o base64 de la fotografía del candidato
+  redes_sociales      Json? // [{ red: 'facebook', url: '...' }]
   biografia           String?
   gustos              String? // Texto libre
   discurso            String? // Discurso de referencia escrito
