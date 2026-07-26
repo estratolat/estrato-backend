@@ -1400,28 +1400,80 @@ export class MapasService {
       orderBy: [{ seccion: 'asc' }, { tipo: 'asc' }, { numero: 'asc' }],
     });
 
+    if (casillas.length === 0) return { type: 'FeatureCollection', features: [] };
+
+    // Traer resultados históricos de las secciones involucradas para mostrar resumen en popup
+    const secciones = [...new Set(casillas.map(c => c.seccion))];
+    const resultados = await this.prisma.resultadoHistorico.findMany({
+      where: { tenant_id: tenantId, seccion: { in: secciones } },
+      orderBy: [{ anio: 'desc' }, { tipo_eleccion: 'asc' }],
+      select: {
+        seccion: true,
+        anio: true,
+        tipo_eleccion: true,
+        total_votos: true,
+        lista_nominal: true,
+        partido_ganador: true,
+        votos_ganador: true,
+        desglose_partidos: true,
+      },
+    });
+
+    // Agrupar resultados por sección y elegir la elección más reciente con datos
+    const resumenPorSeccion = new Map<string, { anio: number; tipo_eleccion: string; ganador: string; votos_ganador: number; total_votos: number; lista_nominal: number } | null>();
+    for (const r of resultados) {
+      if (resumenPorSeccion.has(r.seccion)) continue;
+      const ganador = this.calcularGanadorResultado(r.desglose_partidos as any[], r.partido_ganador, r.votos_ganador);
+      resumenPorSeccion.set(r.seccion, {
+        anio: r.anio,
+        tipo_eleccion: r.tipo_eleccion,
+        ganador: ganador.partido,
+        votos_ganador: ganador.votos,
+        total_votos: r.total_votos || 0,
+        lista_nominal: r.lista_nominal || 0,
+      });
+    }
+
     const features = casillas
       .map(c => ({ c, coords: this.puntoDesde(c.coordenadas) }))
       .filter(item => item.coords)
       .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
-      .map(({ c, coords }) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: coords },
-        properties: {
-          id: c.id,
-          seccion: c.seccion,
-          tipo: c.tipo,
-          numero: c.numero,
-          ubicacion: c.ubicacion,
-          direccion: c.direccion,
-          referencia: c.referencia,
-          electores_esperados: c.electores_esperados,
-          status: c.status,
-          incidencia: c.incidencia,
-        },
-      }));
+      .map(({ c, coords }) => {
+        const resumen = resumenPorSeccion.get(c.seccion) || null;
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords },
+          properties: {
+            id: c.id,
+            seccion: c.seccion,
+            tipo: c.tipo,
+            numero: c.numero,
+            ubicacion: c.ubicacion,
+            direccion: c.direccion,
+            referencia: c.referencia,
+            electores_esperados: c.electores_esperados,
+            status: c.status,
+            incidencia: c.incidencia,
+            historico: resumen,
+            historico_count: resultados.filter(r => r.seccion === c.seccion).length,
+          },
+        };
+      });
 
     return { type: 'FeatureCollection', features };
+  }
+
+  private calcularGanadorResultado(
+    desglose: { partido: string; votos: number; tipo: string }[] | null,
+    partidoGanadorGuardado?: string | null,
+    votosGanadorGuardado?: number | null,
+  ): { partido: string; votos: number } {
+    if (partidoGanadorGuardado && (votosGanadorGuardado || 0) > 0) {
+      return { partido: partidoGanadorGuardado, votos: votosGanadorGuardado || 0 };
+    }
+    if (!desglose?.length) return { partido: 'Sin datos', votos: 0 };
+    const ganador = desglose.reduce((max, d) => ((d.votos || 0) > max.votos ? d : max), desglose[0]);
+    return { partido: ganador.partido, votos: ganador.votos || 0 };
   }
 
   private async geojsonRecorridos(tenantId: string, bbox: [number, number, number, number] | null) {
