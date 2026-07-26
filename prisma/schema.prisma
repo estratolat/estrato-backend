@@ -78,6 +78,7 @@ model PerfilCandidato {
   nombre              String?
   nombre_publico      String? // Alias o nombre como lo conoce la gente (ej. "Yaz", "Chucho")
   cargo               String? // Presidente Municipal, Diputado, Síndico, etc.
+  territorio          String? // Municipio, estado, país o área territorial que representa
   email               String? // Correo de contacto del candidato
   foto_url            String? // URL o base64 de la fotografía del candidato
   redes_sociales      Json? // [{ red: 'facebook', url: '...' }]

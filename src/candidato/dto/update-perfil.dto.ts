@@ -24,6 +24,10 @@ export class UpdatePerfilDto {
 
   @IsOptional()
   @IsString()
+  territorio?: string;
+
+  @IsOptional()
+  @IsString()
   email?: string;
 
   @IsOptional()

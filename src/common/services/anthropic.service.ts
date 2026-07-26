@@ -54,7 +54,7 @@ export class AnthropicService {
   async generarConHuella(
     huella: HuellaCandidato,
     contexto: {
-      perfil: { nombre?: string; biografia?: string; gustos?: string; propuesta_central?: string };
+      perfil: { nombre?: string; biografia?: string; gustos?: string; propuesta_central?: string; territorio?: string };
       tipo: 'boletin' | 'redes';
       contexto: {
         tema?: string;
@@ -136,7 +136,7 @@ Reglas:
   private construirPromptGeneracion(
     huella: HuellaCandidato,
     contexto: {
-      perfil: { nombre?: string; biografia?: string; gustos?: string; propuesta_central?: string };
+      perfil: { nombre?: string; biografia?: string; gustos?: string; propuesta_central?: string; territorio?: string; cargo?: string };
       tipo: 'boletin' | 'redes';
       contexto: {
         tema?: string;
@@ -154,6 +154,8 @@ Reglas:
     const baseInfo = `Candidato: ${contexto.perfil.nombre || 'Candidato'}
 Biografía: ${contexto.perfil.biografia || 'No disponible'}
 Gustos: ${contexto.perfil.gustos || 'No disponible'}
+Cargo: ${contexto.perfil.cargo || 'No disponible'}
+Territorio que representa: ${contexto.perfil.territorio || 'No disponible'}
 Propuesta central: ${contexto.perfil.propuesta_central || huella.propuesta_central || 'No disponible'}
 
 HUELLA DE COMUNICACIÓN:
