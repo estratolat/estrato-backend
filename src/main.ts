@@ -78,6 +78,8 @@ async function createApp() {
   const allowedOrigins = [
     process.env.FRONTEND_URL,
     'http://localhost:3000',
+    'https://estrato.lat',
+    'https://www.estrato.lat',
     'https://frontend-brown-tau-29.vercel.app',
     'https://estrato-frontend.vercel.app',
     'https://estrato-frontend-estrato-s-projects.vercel.app',
@@ -108,7 +110,15 @@ async function createApp() {
     transform: true,
     forbidNonWhitelisted: true,
     exceptionFactory: (errors) => {
-      const messages = errors.map(e => Object.values(e.constraints || {}).join('; '));
+      const extract = (errs: any[], prefix = ''): string[] =>
+        errs.flatMap((e) => {
+          const prop = prefix ? `${prefix}.${e.property}` : e.property;
+          const constraints = e.constraints ? Object.values(e.constraints) : [];
+          if (constraints.length) return constraints.map((c) => `${prop}: ${c}`);
+          if (e.children?.length) return extract(e.children, prop);
+          return [`${prop}: validación fallida`];
+        });
+      const messages = extract(errors);
       return new BadRequestException(messages);
     },
   }));

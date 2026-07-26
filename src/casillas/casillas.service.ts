@@ -15,10 +15,13 @@ export class CasillasService {
     if (query.tipo && TIPOS.includes(query.tipo)) where.tipo = query.tipo;
     if (query.status && STATUS.includes(query.status)) where.status = query.status;
     if (query.q) {
+      const q = String(query.q).trim();
       where.OR = [
-        { ubicacion: { contains: query.q, mode: 'insensitive' } },
-        { direccion: { contains: query.q, mode: 'insensitive' } },
-        { referencia: { contains: query.q, mode: 'insensitive' } },
+        { seccion: { contains: q, mode: 'insensitive' } },
+        { numero: { contains: q, mode: 'insensitive' } },
+        { ubicacion: { contains: q, mode: 'insensitive' } },
+        { direccion: { contains: q, mode: 'insensitive' } },
+        { referencia: { contains: q, mode: 'insensitive' } },
       ];
     }
     return this.prisma.casilla.findMany({

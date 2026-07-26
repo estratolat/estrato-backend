@@ -24,9 +24,6 @@ export class AuthService {
 
     if (user.password_hash) {
       isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    } else {
-      // Fallback para datos antiguos sin hash
-      isPasswordValid = password === 'demo123';
     }
 
     if (!isPasswordValid) {
@@ -182,6 +179,16 @@ export class AuthService {
         'proyeccion',
         'ficha_seccional',
         'historico_electoral',
+      ],
+      encargado_peticiones: [
+        'dashboard',
+        'peticiones',
+        'votantes',
+        'crm',
+        'mapa',
+        'encuestas',
+        'monitoreo',
+        'ficha_seccional',
       ],
       superadmin: ['admin'],
     };

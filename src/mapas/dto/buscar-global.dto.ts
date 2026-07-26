@@ -8,7 +8,7 @@ export class BuscarGlobalDto {
   @IsOptional()
   limit?: string;
 
-  @IsIn(['todos', 'capa', 'capa_feature'])
+  @IsIn(['todos', 'capa', 'capa_feature', 'casilla'])
   @IsOptional()
   tipo?: string;
 }

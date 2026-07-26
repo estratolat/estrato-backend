@@ -24,7 +24,7 @@ model Tenant {
   nombre_candidato      String
   cargo_busca           String? // Alcalde, Diputado Local, etc.
   slogan                String?
-  foto_url              String?  // Logo/foto del candidato (data URL o URL externa)
+  foto_url              String? // Logo/foto del candidato (data URL o URL externa)
   plan                  String   @default("basico") // basico, pro, enterprise
   veda_activa           Boolean  @default(false)
   activo                Boolean  @default(true)
@@ -50,9 +50,13 @@ model Tenant {
   seccionesINE         SeccionINE[]
   resultadosHistoricos ResultadoHistorico[]
   peticiones           Peticion[]
+  evidenciasPeticion   EvidenciaPeticion[]
+  historialPeticiones  HistorialPeticion[]
   perfilCandidato      PerfilCandidato?
   encuestas            Encuesta[]
   respuestasEncuesta   RespuestaEncuesta[]
+  contactosEncuesta    EncuestaContacto[]
+  enviosEncuesta       EncuestaEnvio[]
   casillas             Casilla[]
   metasVotacion        MetaVotacion[]
   partidos             Partido[]
@@ -125,7 +129,10 @@ model Usuario {
   campanasVapi          CampanaVapi[]
   boletinesCreados      Boletin[]           @relation("BoletinCreadoPor")
   capasMapa             CapaMapa[]          @relation("CapaMapaCreadaPor")
-  peticiones            Peticion[]
+  peticionesCreadas     Peticion[]          @relation("PeticionCreadoPor")
+  peticionesAsignadas   Peticion[]          @relation("PeticionResponsable")
+  evidenciasPeticion    EvidenciaPeticion[]
+  historialPeticiones   HistorialPeticion[]
   encuestasCreadas      Encuesta[]          @relation("EncuestaCreadoPor")
   respuestasRegistradas RespuestaEncuesta[] @relation("RespuestaRegistradaPor")
   casillasResponsable   Casilla[]
@@ -166,6 +173,7 @@ enum UserRole {
   coord_zona
   brigadista
   cm
+  encargado_peticiones
   superadmin
 }
 
@@ -217,7 +225,7 @@ model CapaMapa {
   orden      Int            @default(0)
   geojson    Json? // GeoJSON FeatureCollection o Geometry
   metadata   Json? // secciones, líder, votos, etc.
-  estilos    Json?           @default("{}") // colores y nombres por feature
+  estilos    Json?          @default("{}") // colores y nombres por feature
   created_by String?        @db.Uuid
   created_at DateTime       @default(now())
   updated_at DateTime       @updatedAt
@@ -400,6 +408,23 @@ model Apoyo {
 // ==========================================
 // PETICIONES CIUDADANAS
 // ==========================================
+enum TipoPeticion {
+  ciudadana
+  logistica
+  tramite
+  seguimiento_votante
+  tarea_interna
+}
+
+enum OrigenPeticion {
+  app_brigada
+  dashboard
+  landing
+  encuesta
+  whatsapp
+  manual
+}
+
 enum CategoriaPeticion {
   bache
   alumbrado
@@ -407,6 +432,7 @@ enum CategoriaPeticion {
   seguridad
   limpia
   salud
+  apoyo
   otro
 }
 
@@ -418,35 +444,93 @@ enum PrioridadPeticion {
 }
 
 enum EstatusPeticion {
-  reportada
+  propuesta
+  pendiente
   en_proceso
-  atendida
+  resuelta
   cancelada
+  rechazada
 }
 
 model Peticion {
-  id          String            @id @default(uuid()) @db.Uuid
-  tenant_id   String            @db.Uuid
-  votante_id  String?           @db.Uuid
-  categoria   CategoriaPeticion @default(otro)
-  prioridad   PrioridadPeticion @default(media)
-  estatus     EstatusPeticion   @default(reportada)
-  titulo      String?
-  descripcion String
-  coordenadas Json? // {lat, lng}
-  foto_url    String? // data URL base64
-  created_by  String            @db.Uuid
-  created_at  DateTime          @default(now())
-  updated_at  DateTime          @updatedAt
+  id                 String            @id @default(uuid()) @db.Uuid
+  tenant_id          String            @db.Uuid
+  folio              String?           @unique(map: "peticiones_folio_unique") // Folio legible generado por el sistema
+  votante_id         String?           @db.Uuid
+  responsable_id     String?           @db.Uuid // Usuario asignado
+  tipo               TipoPeticion      @default(ciudadana)
+  origen             OrigenPeticion    @default(manual)
+  categoria          CategoriaPeticion @default(otro)
+  prioridad          PrioridadPeticion @default(media)
+  estatus            EstatusPeticion   @default(propuesta)
+  titulo             String?
+  descripcion        String
+  seccion_electoral  String?
+  coordenadas        Json? // {lat, lng}
+  ubicacion_texto    String? // Dirección o referencia escrita
+  fecha_compromiso   DateTime?
+  fecha_resolucion   DateTime?
+  requiere_evidencia Boolean           @default(true)
+  created_by         String            @db.Uuid
+  created_at         DateTime          @default(now())
+  updated_at         DateTime          @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  votante Votante? @relation(fields: [votante_id], references: [id], onDelete: SetNull)
-  creador Usuario  @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  tenant      Tenant              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  votante     Votante?            @relation(fields: [votante_id], references: [id], onDelete: SetNull)
+  responsable Usuario?            @relation("PeticionResponsable", fields: [responsable_id], references: [id], onDelete: SetNull)
+  creador     Usuario             @relation("PeticionCreadoPor", fields: [created_by], references: [id], onDelete: Cascade)
+  evidencias  EvidenciaPeticion[]
+  historial   HistorialPeticion[]
 
   @@index([tenant_id, estatus])
+  @@index([tenant_id, tipo])
   @@index([tenant_id, categoria])
   @@index([tenant_id, prioridad])
+  @@index([tenant_id, responsable_id])
+  @@index([tenant_id, fecha_compromiso])
   @@map("peticiones")
+}
+
+model EvidenciaPeticion {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_id     String   @db.Uuid
+  peticion_id   String   @db.Uuid
+  imagen_url    String // data URL base64 o URL externa
+  latitud       Float?
+  longitud      Float?
+  distancia_m   Int? // Distancia en metros vs ubicación de la petición
+  fecha_captura DateTime @default(now())
+  comentario    String?
+  created_by    String   @db.Uuid
+  created_at    DateTime @default(now())
+
+  peticion Peticion @relation(fields: [peticion_id], references: [id], onDelete: Cascade)
+  creador  Usuario  @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([peticion_id])
+  @@index([tenant_id])
+  @@map("evidencias_peticion")
+}
+
+model HistorialPeticion {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_id        String   @db.Uuid
+  peticion_id      String   @db.Uuid
+  estatus          String // Estado anterior o nuevo según conveniencia
+  estatus_anterior String?
+  estatus_nuevo    String
+  comentario       String?
+  created_by       String   @db.Uuid
+  created_at       DateTime @default(now())
+
+  peticion Peticion @relation(fields: [peticion_id], references: [id], onDelete: Cascade)
+  creador  Usuario  @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([peticion_id, created_at])
+  @@index([tenant_id])
+  @@map("historial_peticiones")
 }
 
 // ==========================================
@@ -691,23 +775,37 @@ model SeccionINE {
 // RESULTADOS HISTÓRICOS ELECTORALES
 // ==========================================
 model ResultadoHistorico {
-  id                Int    @id @default(autoincrement())
-  tenant_id         String @db.Uuid
-  seccion           String @db.VarChar(100)
-  anio              Int // 2018, 2021, 2024
-  estado_id         Int?
-  municipio_id      Int?
-  partido_ganador   String
-  votos_ganador     Int?
-  votos_totales     Int?
-  votos_nulos       Int?
-  participacion_pct Float?
-  desglose_partidos Json? // { PAN: 120, PRI: 80, MORENA: 200, ... }
+  id                  Int     @id @default(autoincrement())
+  tenant_id           String  @db.Uuid
+  tipo_historico      String  @default("principal") // principal | complementario
+  tipo_eleccion       String // ayuntamiento | diputado_local | diputado_federal | senador | gobernador | presidente_republica
+  anio                Int // 2018, 2021, 2024
+  estado_id           Int?
+  estado_nombre       String?
+  municipio_id        Int?
+  municipio_nombre    String?
+  distrito_local_id   Int?
+  distrito_federal_id Int?
+  seccion             String  @db.VarChar(100)
+  casilla             String  @default("NA")
+  tipo_casilla        String?
+  ext_contigua        String?
+  lista_nominal       Int?
+  votos_nulos         Int?
+  votos_no_reg        Int?
+  votos_validos       Int?
+  total_votos         Int?
+  participacion_pct   Float?
+  partido_ganador     String?
+  votos_ganador       Int?
+  partido_principal   String? // partido del proyecto/campaña para este histórico, puede no ser el ganador
+  desglose_partidos   Json? // [{ partido: 'PAN', votos: 161, tipo: 'individual'|'coalicion' }]
+  sabana_completa     Json? // modo sábana: todas las columnas de la fila como { columna, valor }
 
   // Relaciones
   tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
-  @@unique([tenant_id, seccion, anio])
+  @@index([tenant_id, tipo_historico, tipo_eleccion, anio])
   @@index([tenant_id, seccion])
   @@index([tenant_id, anio])
   @@index([tenant_id, municipio_id])
@@ -737,6 +835,7 @@ model Encuesta {
   tenant     Tenant              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   creador    Usuario             @relation("EncuestaCreadoPor", fields: [created_by], references: [id], onDelete: Cascade)
   respuestas RespuestaEncuesta[]
+  envios     EncuestaEnvio[]
 
   @@index([tenant_id, status])
   @@map("encuestas")
@@ -748,6 +847,7 @@ model RespuestaEncuesta {
   encuesta_id    String   @db.Uuid
   votante_id     String?  @db.Uuid
   votante_nombre String?
+  email          String? // email del respondente para anti-duplicado
   respuestas     Json // [{ pregunta_id, valores: [] }]
   coordenadas    Json?
   created_by     String?  @db.Uuid
@@ -760,7 +860,59 @@ model RespuestaEncuesta {
 
   @@index([tenant_id, encuesta_id])
   @@index([votante_id])
+  @@index([email])
   @@map("respuestas_encuesta")
+}
+
+// ==========================================
+// CONTACTOS DE ENCUESTAS - Base reutilizable por proyecto
+// ==========================================
+model EncuestaContacto {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenant_id  String   @db.Uuid
+  nombre     String?
+  email      String
+  telefono   String?
+  metadata   Json? // datos extra del CSV
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  envios EncuestaEnvio[]
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id])
+  @@index([email])
+  @@map("encuestas_contactos")
+}
+
+// ==========================================
+// ENVÍOS DE ENCUESTAS - Registro de WhatsApp/correo compartidos
+// ==========================================
+enum CanalEnvioEncuesta {
+  whatsapp
+  email
+  link
+}
+
+model EncuestaEnvio {
+  id           String             @id @default(uuid()) @db.Uuid
+  tenant_id    String             @db.Uuid
+  encuesta_id  String             @db.Uuid
+  contacto_id  String?            @db.Uuid
+  destinatario String? // email o teléfono cuando no hay contacto_id
+  canal        CanalEnvioEncuesta
+  estado       String             @default("enviado") // enviado, entregado, fallido
+  error        String?
+  created_at   DateTime           @default(now())
+
+  tenant   Tenant            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  encuesta Encuesta          @relation(fields: [encuesta_id], references: [id], onDelete: Cascade)
+  contacto EncuestaContacto? @relation(fields: [contacto_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, encuesta_id])
+  @@index([contacto_id])
+  @@map("encuestas_envios")
 }
 
 // ==========================================

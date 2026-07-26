@@ -37,7 +37,7 @@ export class UsersController {
   getPermisosSchema() {
     return {
       secciones: SECCIONES_DISPONIBLES,
-      roles: ['owner', 'candidato', 'coord_general', 'coord_zona', 'brigadista', 'cm'],
+      roles: ['owner', 'candidato', 'coord_general', 'coord_zona', 'brigadista', 'cm', 'encargado_peticiones'],
       defaults: {
         owner: this.usersService.permisosPorRol('owner'),
         candidato: this.usersService.permisosPorRol('candidato'),
@@ -45,6 +45,7 @@ export class UsersController {
         coord_zona: this.usersService.permisosPorRol('coord_zona'),
         brigadista: this.usersService.permisosPorRol('brigadista'),
         cm: this.usersService.permisosPorRol('cm'),
+        encargado_peticiones: this.usersService.permisosPorRol('encargado_peticiones'),
       },
     };
   }

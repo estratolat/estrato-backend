@@ -24,6 +24,7 @@ import { ResultadosHistoricosModule } from './resultados-historicos/resultados-h
 import { EncuestasModule } from './encuestas/encuestas.module';
 import { CasillasModule } from './casillas/casillas.module';
 import { MonitoreoModule } from './monitoreo/monitoreo.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { ProyeccionModule } from './proyeccion/proyeccion.module';
 import { FichasSeccionalesModule } from './fichas-seccionales/fichas-seccionales.module';
 import { InteligenciaElectoralModule } from './inteligencia-electoral/inteligencia-electoral.module';
@@ -57,6 +58,7 @@ import { InteligenciaElectoralModule } from './inteligencia-electoral/inteligenc
     EncuestasModule,
     CasillasModule,
     MonitoreoModule,
+    DashboardModule,
     ProyeccionModule,
     FichasSeccionalesModule,
     InteligenciaElectoralModule,

@@ -15,6 +15,7 @@ const ROLES_VALIDOS: UserRole[] = [
   'coord_zona',
   'brigadista',
   'cm',
+  'encargado_peticiones',
   'superadmin',
 ];
 
@@ -23,6 +24,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'dashboard',
     'votantes',
     'crm',
+    'peticiones',
     'eventos',
     'mapa',
     'boletines',
@@ -42,6 +44,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'dashboard',
     'votantes',
     'crm',
+    'peticiones',
     'eventos',
     'mapa',
     'boletines',
@@ -61,6 +64,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'dashboard',
     'votantes',
     'crm',
+    'peticiones',
     'eventos',
     'mapa',
     'boletines',
@@ -78,6 +82,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'dashboard',
     'votantes',
     'crm',
+    'peticiones',
     'eventos',
     'mapa',
     'encuestas',
@@ -90,6 +95,7 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
   cm: [
     'dashboard',
     'crm',
+    'peticiones',
     'boletines',
     'candidato',
     'encuestas',
@@ -99,27 +105,38 @@ const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
     'historico_electoral',
     'inteligencia_electoral',
   ],
+  encargado_peticiones: [
+    'dashboard',
+    'peticiones',
+    'votantes',
+    'crm',
+    'mapa',
+    'encuestas',
+    'monitoreo',
+    'ficha_seccional',
+  ],
   superadmin: ['admin'],
 };
 
 export const SECCIONES_DISPONIBLES = [
-  { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { id: 'votantes', label: 'Votantes', icon: 'votantes' },
-  { id: 'crm', label: 'CRM', icon: 'crm' },
-  { id: 'eventos', label: 'Eventos', icon: 'eventos' },
-  { id: 'mapa', label: 'Mapa Territorial', icon: 'mapa' },
-  { id: 'boletines', label: 'Boletines IA', icon: 'boletines' },
-  { id: 'llamadas', label: 'Llamadas', icon: 'llamadas' },
-  { id: 'candidato', label: 'Perfil del Candidato', icon: 'user' },
-  { id: 'encuestas', label: 'Encuestas', icon: 'crm' },
-  { id: 'casillas', label: 'Casillas', icon: 'mapa' },
-  { id: 'monitoreo', label: 'Monitoreo', icon: 'dashboard' },
-  { id: 'proyeccion', label: 'Proyección', icon: 'historico' },
-  { id: 'ficha_seccional', label: 'Ficha Seccional', icon: 'votantes' },
-  { id: 'historico_electoral', label: 'Histórico Electoral', icon: 'historico' },
-  { id: 'inteligencia_electoral', label: 'Inteligencia Electoral', icon: 'historico' },
-  { id: 'usuarios', label: 'Configuración / Usuarios', icon: 'seguridad' },
-  { id: 'app_brigada', label: 'App de Brigada', icon: 'app' },
+  { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', color: '#B91C1C' },
+  { id: 'votantes', label: 'Votantes', icon: 'votantes', color: '#2563EB' },
+  { id: 'crm', label: 'CRM', icon: 'crm', color: '#16A34A' },
+  { id: 'peticiones', label: 'Operaciones', icon: 'apoyos', color: '#06B6D4' },
+  { id: 'eventos', label: 'Eventos', icon: 'eventos', color: '#7C3AED' },
+  { id: 'mapa', label: 'Mapa Territorial', icon: 'mapa', color: '#EA580C' },
+  { id: 'boletines', label: 'Boletines IA', icon: 'boletines', color: '#0369A1' },
+  { id: 'llamadas', label: 'Llamadas', icon: 'llamadas', color: '#9F1239' },
+  { id: 'candidato', label: 'Perfil del Candidato', icon: 'user', color: '#BE185D' },
+  { id: 'encuestas', label: 'Encuestas', icon: 'crm', color: '#D97706' },
+  { id: 'casillas', label: 'Casillas', icon: 'mapa', color: '#DB2777' },
+  { id: 'monitoreo', label: 'Monitoreo', icon: 'dashboard', color: '#0891B2' },
+  { id: 'proyeccion', label: 'Proyección', icon: 'historico', color: '#0F766E' },
+  { id: 'ficha_seccional', label: 'Ficha Seccional', icon: 'votantes', color: '#C2410C' },
+  { id: 'historico_electoral', label: 'Histórico Electoral', icon: 'historico', color: '#4338CA' },
+  { id: 'inteligencia_electoral', label: 'Inteligencia Electoral', icon: 'historico', color: '#9333EA' },
+  { id: 'usuarios', label: 'Configuración / Usuarios', icon: 'seguridad', color: '#475569' },
+  { id: 'app_brigada', label: 'App de Brigada', icon: 'app', color: '#000000' },
 ];
 
 @Injectable()
@@ -238,8 +255,7 @@ export class UsersService {
     }
 
     if (!esUpdate && !payload.password_hash) {
-      // Contraseña inicial por defecto para compatibilidad con demo
-      payload.password_hash = await bcrypt.hash('demo123', 10);
+      throw new BadRequestException('La contraseña es obligatoria para crear un usuario');
     }
 
     if (data.rol !== undefined) {

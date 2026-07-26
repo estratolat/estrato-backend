@@ -15,7 +15,8 @@ const CAPAS_PREDEFINIDAS = [
   { id: 'apoyos', tipo: 'apoyos', nombre: 'Apoyos entregados', origen: 'propia', color: '#F59E0B', visible: true, orden: 4 },
   { id: 'peticiones', tipo: 'peticiones', nombre: 'Peticiones ciudadanas', origen: 'propia', color: '#06B6D4', visible: true, orden: 5 },
   { id: 'eventos', tipo: 'eventos', nombre: 'Eventos / mítines', origen: 'propia', color: '#EF4444', visible: true, orden: 6 },
-  { id: 'recorridos', tipo: 'recorridos', nombre: 'Recorridos de brigada', origen: 'propia', color: '#06B6D4', visible: false, orden: 7 },
+  { id: 'casillas', tipo: 'casillas', nombre: 'Casillas', origen: 'propia', color: '#DB2777', visible: true, orden: 7 },
+  { id: 'recorridos', tipo: 'recorridos', nombre: 'Recorridos de brigada', origen: 'propia', color: '#06B6D4', visible: false, orden: 8 },
 ];
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
@@ -1012,6 +1013,9 @@ export class MapasService {
         case 'eventos':
           resultado.eventos = await this.geojsonEventos(tenantId, bbox);
           break;
+        case 'casillas':
+          resultado.casillas = await this.geojsonCasillas(tenantId, bbox);
+          break;
         case 'recorridos':
           resultado.recorridos = await this.geojsonRecorridos(tenantId, bbox);
           break;
@@ -1346,7 +1350,9 @@ export class MapasService {
           estatus: p.estatus,
           titulo: p.titulo,
           descripcion: p.descripcion,
-          foto_url: p.foto_url,
+          folio: p.folio,
+          tipo: p.tipo,
+          origen: p.origen,
           created_at: p.created_at,
           votante_id: p.votante_id,
           votante_nombre: p.votante?.nombre,
@@ -1382,6 +1388,36 @@ export class MapasService {
           qr_code: e.qr_code,
           tematica: e.tematica,
           zona_id: e.zona_id,
+        },
+      }));
+
+    return { type: 'FeatureCollection', features };
+  }
+
+  private async geojsonCasillas(tenantId: string, bbox: [number, number, number, number] | null) {
+    const casillas = await this.prisma.casilla.findMany({
+      where: { tenant_id: tenantId, coordenadas: { not: null } },
+      orderBy: [{ seccion: 'asc' }, { tipo: 'asc' }, { numero: 'asc' }],
+    });
+
+    const features = casillas
+      .map(c => ({ c, coords: this.puntoDesde(c.coordenadas) }))
+      .filter(item => item.coords)
+      .filter(item => !bbox || puntoEnBbox(item.coords![0], item.coords![1], bbox))
+      .map(({ c, coords }) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: coords },
+        properties: {
+          id: c.id,
+          seccion: c.seccion,
+          tipo: c.tipo,
+          numero: c.numero,
+          ubicacion: c.ubicacion,
+          direccion: c.direccion,
+          referencia: c.referencia,
+          electores_esperados: c.electores_esperados,
+          status: c.status,
+          incidencia: c.incidencia,
         },
       }));
 
@@ -1827,6 +1863,44 @@ export class MapasService {
 
     const promesas: Promise<any[]>[] = [];
 
+    // 0) Buscar casillas por sección, ubicación o dirección
+    if (tipoFiltro === 'todos' || tipoFiltro === 'casilla') {
+      promesas.push(
+        this.prisma.casilla
+          .findMany({
+            where: {
+              tenant_id: tenantId,
+              OR: [
+                { seccion: { contains: termino, mode: 'insensitive' } },
+                { ubicacion: { contains: termino, mode: 'insensitive' } },
+                { direccion: { contains: termino, mode: 'insensitive' } },
+                { numero: { contains: termino, mode: 'insensitive' } },
+              ],
+            },
+            take: max,
+            orderBy: [{ seccion: 'asc' }, { tipo: 'asc' }, { numero: 'asc' }],
+          })
+          .then((rows) => {
+            return rows.map((c) => {
+              const coords = this.puntoDesde(c.coordenadas);
+              return {
+                id: `casilla-${c.id}`,
+                tipo: 'casilla',
+                nombre: `Casilla ${c.tipo}${c.numero ? ` ${c.numero}` : ''} - Sección ${c.seccion}`,
+                descripcion: c.ubicacion || c.direccion || 'Sin ubicación',
+                seccion: c.seccion,
+                color: '#DB2777',
+                bbox: coords ? [coords[0], coords[1], coords[0], coords[1]] : undefined,
+                geometry: coords
+                  ? { type: 'Point', coordinates: coords }
+                  : undefined,
+                url: `/dashboard/casillas/${c.id}`,
+              };
+            });
+          }),
+      );
+    }
+
     // 1) Buscar capas por nombre (cualquier tipo de capa personalizada)
     if (tipoFiltro === 'todos' || tipoFiltro === 'capa') {
       promesas.push(
@@ -1963,7 +2037,7 @@ export class MapasService {
       if (ultimoResultado) {
         datosOficiales.partido_ganador = ultimoResultado.partido_ganador;
         datosOficiales.votos_ganador = ultimoResultado.votos_ganador;
-        datosOficiales.votos_totales = ultimoResultado.votos_totales;
+        datosOficiales.votos_totales = ultimoResultado.total_votos;
         datosOficiales.participacion_pct = ultimoResultado.participacion_pct;
       }
 

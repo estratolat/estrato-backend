@@ -35,6 +35,7 @@ async function main() {
     [UserRole.coord_zona]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'encuestas', 'casillas', 'monitoreo', 'ficha_seccional', 'app_brigada'],
     [UserRole.brigadista]: ['app_brigada'],
     [UserRole.cm]: ['dashboard', 'crm', 'boletines', 'candidato', 'encuestas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral'],
+    [UserRole.encargado_peticiones]: ['dashboard', 'peticiones', 'votantes', 'crm', 'mapa', 'encuestas', 'monitoreo', 'ficha_seccional'],
     [UserRole.superadmin]: ['admin'],
   };
 
@@ -47,6 +48,7 @@ async function main() {
     { email: 'coord@demo.com', nombre: 'Coordinador General', rol: UserRole.coord_general },
     { email: 'brigadista@demo.com', nombre: 'Brigadista 1', rol: UserRole.brigadista, telefono: '+521234567893', pin: '1234' },
     { email: 'cm@demo.com', nombre: 'Community Manager', rol: UserRole.cm },
+    { email: 'peticiones@demo.com', nombre: 'Encargado de Peticiones', rol: UserRole.encargado_peticiones },
   ];
 
   for (const user of users) {

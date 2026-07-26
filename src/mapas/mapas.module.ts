@@ -7,5 +7,6 @@ import { PrismaService } from '../common/services/prisma.service';
 @Module({
   controllers: [MapasController],
   providers: [MapasService, GisParserService, PrismaService],
+  exports: [MapasService],
 })
 export class MapasModule {}

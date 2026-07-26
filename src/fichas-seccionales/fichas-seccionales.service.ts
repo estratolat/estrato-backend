@@ -86,7 +86,7 @@ export class FichasSeccionalesService {
         anio: r.anio,
         partido_ganador: r.partido_ganador,
         votos_ganador: r.votos_ganador,
-        votos_totales: r.votos_totales,
+        votos_totales: r.total_votos,
         participacion_pct: r.participacion_pct,
       })),
       lista_nominal_2024: listaNominal,
