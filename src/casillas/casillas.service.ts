@@ -95,6 +95,116 @@ export class CasillasService {
     return { ok: true };
   }
 
+  /**
+   * Trae los resultados históricos electorales vinculados a la sección de una casilla.
+   * Agrupa por año + tipo de elección para mostrar votos por casilla histórica.
+   */
+  async resultadosHistoricos(id: string, tenantId: string) {
+    const casilla = await this.findOne(id, tenantId);
+    if (!casilla) throw new NotFoundException('Casilla no encontrada');
+
+    const resultados = await this.prisma.resultadoHistorico.findMany({
+      where: {
+        tenant_id: tenantId,
+        seccion: casilla.seccion,
+      },
+      orderBy: [
+        { anio: 'desc' },
+        { tipo_eleccion: 'asc' },
+        { tipo_casilla: 'asc' },
+        { casilla: 'asc' },
+        { ext_contigua: 'asc' },
+      ],
+    });
+
+    const mapTipo = (tipoCasilla?: string | null) => {
+      switch (tipoCasilla) {
+        case 'B': return 'Básica';
+        case 'C': return 'Contigua';
+        case 'E': return 'Especial';
+        case 'A': return 'Alterna';
+        case 'S': return 'Supervisora';
+        default: return tipoCasilla || 'General';
+      }
+    };
+
+    const eleccionesMap = new Map<string, any>();
+    for (const r of resultados) {
+      const key = `${r.anio}|${r.tipo_eleccion}`;
+      if (!eleccionesMap.has(key)) {
+        eleccionesMap.set(key, {
+          anio: r.anio,
+          tipo_eleccion: r.tipo_eleccion,
+          casillas: [],
+          totales: {
+            lista_nominal: 0,
+            total_votos: 0,
+            votos_validos: 0,
+            votos_nulos: 0,
+            votos_no_reg: 0,
+          },
+          max_votos: 0,
+          ganador: null as any,
+        });
+      }
+      const elec = eleccionesMap.get(key);
+
+      const desglose = (r.desglose_partidos || []) as { partido: string; votos: number; tipo: string }[];
+      const item = {
+        casilla: r.casilla,
+        tipo_casilla: r.tipo_casilla,
+        tipo_casilla_label: mapTipo(r.tipo_casilla),
+        ext_contigua: r.ext_contigua,
+        lista_nominal: r.lista_nominal,
+        total_votos: r.total_votos,
+        votos_validos: r.votos_validos,
+        votos_nulos: r.votos_nulos,
+        votos_no_reg: r.votos_no_reg,
+        participacion_pct: r.participacion_pct,
+        partido_ganador: r.partido_ganador,
+        votos_ganador: r.votos_ganador,
+        desglose_partidos: desglose,
+      };
+      elec.casillas.push(item);
+
+      elec.totales.lista_nominal += r.lista_nominal || 0;
+      elec.totales.total_votos += r.total_votos || 0;
+      elec.totales.votos_validos += r.votos_validos || 0;
+      elec.totales.votos_nulos += r.votos_nulos || 0;
+      elec.totales.votos_no_reg += r.votos_no_reg || 0;
+
+      // Ganador por suma de desglose para toda la sección en esa elección
+      for (const d of desglose) {
+        const actual = elec.ganador?.partido === d.partido ? elec.ganador.votos : 0;
+        const suma = actual + (d.votos || 0);
+        if (suma > elec.max_votos) {
+          elec.max_votos = suma;
+          elec.ganador = { partido: d.partido, votos: suma, tipo: d.tipo };
+        }
+      }
+    }
+
+    const elecciones = Array.from(eleccionesMap.values()).map((e) => ({
+      anio: e.anio,
+      tipo_eleccion: e.tipo_eleccion,
+      casillas: e.casillas,
+      totales: e.totales,
+      ganador: e.ganador,
+    }));
+
+    return {
+      casilla: {
+        id: casilla.id,
+        seccion: casilla.seccion,
+        tipo: casilla.tipo,
+        numero: casilla.numero,
+        ubicacion: casilla.ubicacion,
+      },
+      total_resultados: resultados.length,
+      elecciones,
+    };
+  }
+
   async importar(data: any[], tenantId: string) {
     if (!Array.isArray(data) || data.length === 0) throw new BadRequestException('Arreglo vacío');
     const creadas = [];

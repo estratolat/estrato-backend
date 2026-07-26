@@ -22,6 +22,12 @@ export class CasillasController {
     return this.casillasService.findOne(id, req.tenant.id);
   }
 
+  @Get(':id/resultados')
+  @ApiOperation({ summary: 'Resultados históricos electorales de la casilla' })
+  resultadosHistoricos(@Param('id') id: string, @Req() req: any) {
+    return this.casillasService.resultadosHistoricos(id, req.tenant.id);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Crear casilla' })
   create(@Body() data: any, @Req() req: any) {
