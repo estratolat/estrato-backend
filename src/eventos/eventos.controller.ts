@@ -13,6 +13,11 @@ export class EventosController {
     return this.eventosService.findAll(query, req.tenant.id);
   }
 
+  @Get('proximos')
+  getProximos(@Req() req: any) {
+    return this.eventosService.getProximos(req.tenant.id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req: any) {
     return this.eventosService.findOne(id, req.tenant.id);

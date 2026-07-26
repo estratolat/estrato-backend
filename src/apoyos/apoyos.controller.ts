@@ -13,6 +13,11 @@ export class ApoyosController {
     return this.apoyosService.findAll(query, req.tenant.id);
   }
 
+  @Get('stats')
+  getStats(@Req() req: any) {
+    return this.apoyosService.getStats(req.tenant.id);
+  }
+
   @Post()
   create(@Body() data: any, @Req() req: any) {
     return this.apoyosService.create(data, req.tenant.id, req.usuario?.id);

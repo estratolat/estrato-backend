@@ -14,6 +14,24 @@ export class ApoyosService {
     });
   }
 
+  async getStats(tenantId: string) {
+    const inicioMes = new Date();
+    inicioMes.setDate(1);
+    inicioMes.setHours(0, 0, 0, 0);
+
+    const [total, mes] = await Promise.all([
+      this.prisma.apoyo.count({ where: { tenant_id: tenantId } }),
+      this.prisma.apoyo.count({
+        where: {
+          tenant_id: tenantId,
+          created_at: { gte: inicioMes },
+        },
+      }),
+    ]);
+
+    return { total, mes };
+  }
+
   async create(data: any, tenantId: string, userId?: string) {
     if (!userId) {
       throw new BadRequestException('Usuario entregador no identificado');

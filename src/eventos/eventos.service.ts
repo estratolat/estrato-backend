@@ -14,6 +14,30 @@ export class EventosService {
     });
   }
 
+  async getProximos(tenantId: string, limit = 5) {
+    const ahora = new Date();
+    const proximos = await this.prisma.evento.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: { not: 'cancelado' },
+        fecha_inicio: { gte: ahora },
+      },
+      orderBy: { fecha_inicio: 'asc' },
+      take: limit,
+      select: { id: true, nombre: true, fecha_inicio: true, direccion: true },
+    });
+
+    const total = await this.prisma.evento.count({
+      where: {
+        tenant_id: tenantId,
+        status: { not: 'cancelado' },
+        fecha_inicio: { gte: ahora },
+      },
+    });
+
+    return { total, proximos };
+  }
+
   async findOne(id: string, tenantId: string) {
     const evento = await this.prisma.evento.findFirst({
       where: { id, tenant_id: tenantId },
