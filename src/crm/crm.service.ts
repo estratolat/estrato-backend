@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
 import { MessagingService, MensajeExterno } from './messaging.service';
 import { CreateMensajeDto } from './dto/create-mensaje.dto';
 import { FiltersMensajesDto } from './dto/filters-mensajes.dto';
+import {
+  CreateCanalCrmDto,
+  UpdateCanalCrmDto,
+} from './dto/canal-crm.dto';
 
 @Injectable()
 export class CrmService {
@@ -11,6 +19,75 @@ export class CrmService {
     private messaging: MessagingService,
   ) {}
 
+  // ==========================================================
+  // CANALES CRM
+  // ==========================================================
+  async getCanales(tenantId: string, soloActivos = false) {
+    return this.prisma.canalCrm.findMany({
+      where: { tenant_id: tenantId, ...(soloActivos && { activo: true }) },
+      orderBy: [{ canal: 'asc' }, { created_at: 'asc' }],
+    });
+  }
+
+  async getCanal(tenantId: string, id: string) {
+    const canal = await this.prisma.canalCrm.findFirst({
+      where: { id, tenant_id: tenantId },
+    });
+    if (!canal) {
+      throw new NotFoundException('Canal CRM no encontrado');
+    }
+    return canal;
+  }
+
+  async createCanal(tenantId: string, data: CreateCanalCrmDto) {
+    if (data.webhook_path) {
+      const existe = await this.prisma.canalCrm.findFirst({
+        where: { webhook_path: data.webhook_path },
+      });
+      if (existe) {
+        throw new BadRequestException('webhook_path ya está en uso');
+      }
+    }
+    return this.prisma.canalCrm.create({
+      data: { ...data, tenant_id: tenantId },
+    });
+  }
+
+  async updateCanal(
+    tenantId: string,
+    id: string,
+    data: UpdateCanalCrmDto,
+  ) {
+    await this.getCanal(tenantId, id);
+    if (data.webhook_path) {
+      const existe = await this.prisma.canalCrm.findFirst({
+        where: { webhook_path: data.webhook_path, NOT: { id } },
+      });
+      if (existe) {
+        throw new BadRequestException('webhook_path ya está en uso');
+      }
+    }
+    return this.prisma.canalCrm.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async deleteCanal(tenantId: string, id: string) {
+    await this.getCanal(tenantId, id);
+    return this.prisma.canalCrm.delete({ where: { id } });
+  }
+
+  async getCanalActivo(tenantId: string, canal: string) {
+    return this.prisma.canalCrm.findFirst({
+      where: { tenant_id: tenantId, canal, activo: true },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  // ==========================================================
+  // CONVERSACIONES / MENSAJES
+  // ==========================================================
   async getConversaciones(tenantId: string, filters: FiltersMensajesDto) {
     const where: any = { tenant_id: tenantId };
     if (filters.canal) where.canal = filters.canal;
@@ -135,18 +212,37 @@ export class CrmService {
       destinatarioId = (votante.metadata as any)?.instagram_id || undefined;
     }
 
+    // Seleccionar canal CRM configurado
+    let canalCrm = data.canal_crm_id
+      ? await this.prisma.canalCrm.findFirst({
+          where: { id: data.canal_crm_id, tenant_id: tenantId, activo: true },
+        })
+      : null;
+
+    if (!canalCrm && ['whatsapp', 'messenger', 'instagram', 'sms', 'email'].includes(canal)) {
+      canalCrm = await this.getCanalActivo(tenantId, canal);
+    }
+
     let envioExterno: { ok: boolean; id_externo?: string; error?: string } = { ok: true };
+    const canalesConEnvioExterno = ['whatsapp', 'messenger', 'instagram', 'sms'] as const;
     if (
       destinatarioId &&
-      (canal === 'whatsapp' || canal === 'messenger' || canal === 'instagram')
+      canalCrm &&
+      (canalesConEnvioExterno as readonly string[]).includes(canal)
     ) {
-      envioExterno = await this.messaging.enviarOutbound(canal, destinatarioId, data.contenido);
+      envioExterno = await this.messaging.enviarOutbound(
+        canal as 'whatsapp' | 'messenger' | 'instagram' | 'sms',
+        destinatarioId,
+        data.contenido,
+        { canalCrm },
+      );
     }
 
     const mensaje = await this.prisma.mensaje.create({
       data: {
         tenant_id: tenantId,
         votante_id: data.votante_id,
+        canal_crm_id: canalCrm?.id || null,
         canal,
         direccion: 'outbound',
         contenido: data.contenido,
@@ -158,6 +254,7 @@ export class CrmService {
       include: {
         votante: { select: { id: true, nombre: true, telefono: true } },
         atendedor: { select: { id: true, nombre: true } },
+        canalCrm: { select: { id: true, nombre: true, canal: true } },
       },
     });
 
@@ -190,7 +287,11 @@ export class CrmService {
     });
   }
 
-  async procesarWebhook(tenantId: string, payload: any) {
+  async procesarWebhook(
+    tenantId: string,
+    payload: any,
+    canalCrmId?: string,
+  ) {
     const mensajesExternos = this.messaging.parseWebhook(payload);
     const guardados = [];
 
@@ -211,6 +312,7 @@ export class CrmService {
         data: {
           tenant_id: tenantId,
           votante_id: votante.id,
+          canal_crm_id: canalCrmId || null,
           canal: externo.canal,
           direccion: 'inbound',
           contenido: externo.contenido,
@@ -220,6 +322,7 @@ export class CrmService {
         },
         include: {
           votante: { select: { id: true, nombre: true, telefono: true } },
+          canalCrm: { select: { id: true, nombre: true, canal: true } },
         },
       });
 

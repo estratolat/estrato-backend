@@ -7,6 +7,10 @@ export class CreateMensajeDto {
   @IsEnum(['whatsapp', 'messenger', 'instagram', 'form', 'sms', 'email'])
   canal: 'whatsapp' | 'messenger' | 'instagram' | 'form' | 'sms' | 'email';
 
+  @IsUUID()
+  @IsOptional()
+  canal_crm_id?: string;
+
   @IsString()
   contenido: string;
 

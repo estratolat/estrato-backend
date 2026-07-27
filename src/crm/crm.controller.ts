@@ -6,6 +6,7 @@ import {
   Query,
   Param,
   Patch,
+  Delete,
   UseGuards,
   Req,
   Res,
@@ -21,10 +22,14 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { PrismaService } from '../common/services/prisma.service';
 import { CreateMensajeDto } from './dto/create-mensaje.dto';
 import { FiltersMensajesDto } from './dto/filters-mensajes.dto';
+import {
+  CreateCanalCrmDto,
+  UpdateCanalCrmDto,
+} from './dto/canal-crm.dto';
 
 interface RequestConTenant extends Request {
   tenant: { id: string };
-  usuario: { id: string };
+  usuario: { id: string; rol: string; permisos: any };
 }
 
 @Controller('crm')
@@ -36,6 +41,56 @@ export class CrmController {
     private readonly prisma: PrismaService,
   ) {}
 
+  // ==========================================================
+  // CANALES CRM
+  // ==========================================================
+  @Get('canales')
+  getCanales(
+    @Query('solo_activos') soloActivos: string,
+    @Req() req: RequestConTenant,
+  ) {
+    return this.crmService.getCanales(
+      req.tenant.id,
+      soloActivos === 'true',
+    );
+  }
+
+  @Get('canales/:id')
+  getCanal(
+    @Param('id') id: string,
+    @Req() req: RequestConTenant,
+  ) {
+    return this.crmService.getCanal(req.tenant.id, id);
+  }
+
+  @Post('canales')
+  createCanal(
+    @Body() data: CreateCanalCrmDto,
+    @Req() req: RequestConTenant,
+  ) {
+    return this.crmService.createCanal(req.tenant.id, data);
+  }
+
+  @Patch('canales/:id')
+  updateCanal(
+    @Param('id') id: string,
+    @Body() data: UpdateCanalCrmDto,
+    @Req() req: RequestConTenant,
+  ) {
+    return this.crmService.updateCanal(req.tenant.id, id, data);
+  }
+
+  @Delete('canales/:id')
+  deleteCanal(
+    @Param('id') id: string,
+    @Req() req: RequestConTenant,
+  ) {
+    return this.crmService.deleteCanal(req.tenant.id, id);
+  }
+
+  // ==========================================================
+  // CONVERSACIONES / MENSAJES
+  // ==========================================================
   @Get('conversaciones')
   getConversaciones(
     @Query() filters: FiltersMensajesDto,
@@ -73,10 +128,13 @@ export class CrmController {
     return this.crmService.getStats(req.tenant.id);
   }
 
-  // Webhooks públicos para Meta (sin JWT)
-  @Post('webhook/:tenantSlug')
+  // ==========================================================
+  // WEBHOOKS PÚBLICOS POR CANAL
+  // ==========================================================
+  @Post('webhook/:tenantSlug/:webhookPath')
   async recibirWebhook(
     @Param('tenantSlug') tenantSlug: string,
+    @Param('webhookPath') webhookPath: string,
     @Body() payload: any,
   ) {
     const tenant = await this.prisma.tenant.findUnique({
@@ -86,13 +144,21 @@ export class CrmController {
       throw new ForbiddenException('Tenant no encontrado');
     }
 
+    const canalCrm = await this.prisma.canalCrm.findFirst({
+      where: { tenant_id: tenant.id, webhook_path: webhookPath, activo: true },
+    });
+    if (!canalCrm) {
+      throw new ForbiddenException('Canal CRM no encontrado o inactivo');
+    }
+
     await this.prisma.setTenant(tenant.id);
-    return this.crmService.procesarWebhook(tenant.id, payload);
+    return this.crmService.procesarWebhook(tenant.id, payload, canalCrm.id);
   }
 
-  @Get('webhook/:tenantSlug')
+  @Get('webhook/:tenantSlug/:webhookPath')
   async verificarWebhook(
     @Param('tenantSlug') tenantSlug: string,
+    @Param('webhookPath') webhookPath: string,
     @Query('hub.mode') mode: string,
     @Query('hub.verify_token') verifyToken: string,
     @Query('hub.challenge') challenge: string,
@@ -102,7 +168,21 @@ export class CrmController {
       throw new BadRequestException('Modo no soportado');
     }
 
-    const expected = this.messagingService.generarVerifyToken();
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+    });
+    if (!tenant) {
+      throw new ForbiddenException('Tenant no encontrado');
+    }
+
+    const canalCrm = await this.prisma.canalCrm.findFirst({
+      where: { tenant_id: tenant.id, webhook_path: webhookPath, activo: true },
+    });
+    if (!canalCrm) {
+      throw new ForbiddenException('Canal CRM no encontrado o inactivo');
+    }
+
+    const expected = this.messagingService.generarVerifyToken(canalCrm);
     if (verifyToken !== expected) {
       throw new ForbiddenException('Verify token inválido');
     }

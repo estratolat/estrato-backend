@@ -38,6 +38,7 @@ model Tenant {
   eventos              Evento[]
   apoyos               Apoyo[]
   mensajes             Mensaje[]
+  canalesCrm           CanalCrm[]
   boletines            Boletin[]
   campanasVapi         CampanaVapi[]
   llamadasVapi         LlamadaVapi[]
@@ -65,6 +66,7 @@ model Tenant {
   resultadosCasillas   ResultadoCasilla[]
   proyecciones         SeccionAnalisisProyeccion[]
   opositores           Opositor[]
+  indicadoresMunicipales IndicadorMunicipal[]
 
   @@map("tenants")
 }
@@ -103,6 +105,37 @@ model PerfilCandidato {
 
   @@index([tenant_id])
   @@map("perfiles_candidato")
+}
+
+// ==========================================
+// INDICADORES MUNICIPALES — Data México
+// ==========================================
+model IndicadorMunicipal {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_id       String   @db.Uuid
+  categoria       String   // poblacion, economia, empleo, educacion, salud, vivienda, etc.
+  subcategoria    String?  // desagregacion interna
+  indicador       String   // nombre legible
+  descripcion     String?
+  valor_numerico  Float?
+  valor_texto     String?
+  unidad          String?  // habitantes, %, millones de pesos, etc.
+  periodo         String?  // 2020, 2022, ultimo dato disponible
+  fuente          String   @default("Data México")
+  fuente_url      String?
+  coordenada_x    Float?
+  coordenada_y    Float?
+  visible         Boolean  @default(true)
+  orden           Int      @default(0)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, categoria, indicador, subcategoria, periodo], name: "indicador_unico")
+  @@index([tenant_id, categoria])
+  @@index([tenant_id, periodo])
+  @@map("indicadores_municipales")
 }
 
 // ==========================================
@@ -570,6 +603,7 @@ model Mensaje {
   id                   String   @id @default(uuid()) @db.Uuid
   tenant_id            String   @db.Uuid
   votante_id           String   @db.Uuid
+  canal_crm_id         String?  @db.Uuid
   canal                String // whatsapp, messenger, form, sms, email
   direccion            String // inbound, outbound
   contenido            String
@@ -583,14 +617,40 @@ model Mensaje {
   created_at           DateTime @default(now())
 
   // Relaciones
-  tenant    Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  votante   Votante  @relation(fields: [votante_id], references: [id], onDelete: Cascade)
-  atendedor Usuario? @relation("MensajeAtendidoPor", fields: [atendido_por], references: [id])
+  tenant    Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  votante   Votante    @relation(fields: [votante_id], references: [id], onDelete: Cascade)
+  canalCrm  CanalCrm?  @relation(fields: [canal_crm_id], references: [id], onDelete: SetNull)
+  atendedor Usuario?   @relation("MensajeAtendidoPor", fields: [atendido_por], references: [id])
 
   @@index([tenant_id, created_at])
   @@index([votante_id, created_at])
   @@index([canal])
   @@map("mensajes")
+}
+
+model CanalCrm {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_id     String   @db.Uuid
+  canal         String // whatsapp, messenger, instagram, sms, email
+  nombre        String // "WhatsApp Oficial", "Messenger Página Yaz", etc.
+  proveedor     String   @default("meta") // meta, twilio, vonage, smtp, custom
+  cuenta_id     String? // phone_number_id, page_id, instagram_id, smtp_username...
+  access_token  String? // token de la cuenta (recomendado cifrar en producción)
+  desde_numero  String? // número saliente para SMS/WhatsApp
+  webhook_path  String? // slug único para webhook: /crm/webhook/:tenantSlug/:webhookPath
+  verify_token  String? // token para verificación de webhooks de Meta
+  activo        Boolean  @default(true)
+  metadata      Json? // configuración extra según proveedor
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  mensajes Mensaje[]
+
+  @@index([tenant_id, canal])
+  @@index([tenant_id, activo])
+  @@index([webhook_path])
+  @@map("canales_crm")
 }
 
 // ==========================================
