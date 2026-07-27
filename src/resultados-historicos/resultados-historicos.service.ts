@@ -186,6 +186,208 @@ export class ResultadosHistoricosService {
   }
 
   // =====================================================
+  // CRUCE HISTÓRICO POR SECCIÓN
+  // =====================================================
+  async cruce(
+    tenantId: string,
+    dto: {
+      tipo_eleccion: string;
+      tipo_historico?: string;
+      anios?: number[];
+      partidos_bloque?: string[];
+    },
+  ) {
+    const where: any = { tenant_id: tenantId, tipo_eleccion: dto.tipo_eleccion };
+    if (dto.tipo_historico) where.tipo_historico = dto.tipo_historico;
+    if (dto.anios?.length) where.anio = { in: dto.anios };
+
+    const rows = await this.prisma.resultadoHistorico.findMany({
+      where,
+      orderBy: [{ anio: 'desc' }, { seccion: 'asc' }, { casilla: 'asc' }],
+    });
+
+    if (rows.length === 0) {
+      return { secciones: [], metadata: { anios: [], bloque: [], total_secciones: 0 } };
+    }
+
+    // Detectar partido principal del primer lote si no se envió bloque
+    const partidoPrincipal = dto.partidos_bloque?.length
+      ? dto.partidos_bloque[0]
+      : (rows.find((r) => r.partido_principal)?.partido_principal || '');
+
+    const bloque = dto.partidos_bloque?.length
+      ? dto.partidos_bloque
+      : this.inferirBloque(partidoPrincipal, rows);
+
+    // Agrupar por año y sección
+    const porAnioSeccion: Record<
+      number,
+      Record<
+        string,
+        {
+          actores: Record<string, number>;
+          total_votos: number;
+          votos_validos: number;
+          lista_nominal: number;
+          votos_nulos: number;
+          casillas: number;
+        }
+      >
+    > = {};
+
+    for (const r of rows) {
+      const anio = r.anio;
+      const seccion = this.formatearSeccion(r.seccion);
+      if (!porAnioSeccion[anio]) porAnioSeccion[anio] = {};
+      if (!porAnioSeccion[anio][seccion]) {
+        porAnioSeccion[anio][seccion] = {
+          actores: {},
+          total_votos: 0,
+          votos_validos: 0,
+          lista_nominal: 0,
+          votos_nulos: 0,
+          casillas: 0,
+        };
+      }
+      const celda = porAnioSeccion[anio][seccion];
+      celda.total_votos += r.total_votos || 0;
+      celda.votos_validos += r.votos_validos || 0;
+      celda.lista_nominal += r.lista_nominal || 0;
+      celda.votos_nulos += r.votos_nulos || 0;
+      celda.casillas += 1;
+
+      const desglose = (r.desglose_partidos || []) as any[];
+      for (const actor of desglose) {
+        const nombre = String(actor.partido || actor.nombre || '').toUpperCase().trim();
+        const votos = Number(actor.votos || 0);
+        if (!nombre || votos === 0) continue;
+        celda.actores[nombre] = (celda.actores[nombre] || 0) + votos;
+      }
+    }
+
+    const anios = Object.keys(porAnioSeccion).map(Number).sort((a, b) => b - a);
+    const todasSecciones = new Set<string>();
+    for (const anio of anios) {
+      Object.keys(porAnioSeccion[anio]).forEach((s) => todasSecciones.add(s));
+    }
+
+    const resultadoSecciones = Array.from(todasSecciones)
+      .sort()
+      .map((seccion) => {
+        const porAnio: Record<
+          string,
+          {
+            votos_bloque: number;
+            votos_ganador: number;
+            votos_segundo: number;
+            gano_bloque: boolean;
+            pct_bloque: number;
+            total_votos: number;
+            votos_validos: number;
+            lista_nominal: number;
+            ganador?: string;
+            segundo?: string;
+          }
+        > = {};
+
+        let vecesGana = 0;
+        let tendenciaBaseInicial: number | null = null;
+        let tendenciaBaseFinal: number | null = null;
+        const ganadoresHistoricos: Record<string, number> = {};
+
+        for (const anio of anios) {
+          const celda = porAnioSeccion[anio][seccion];
+          if (!celda) continue;
+
+          const actores = celda.actores;
+          const entradas = Object.entries(actores).map(([partido, votos]) => ({ partido, votos }));
+          const ordenados = entradas.sort((a, b) => b.votos - a.votos);
+          const ganador = ordenados[0];
+          const segundo = ordenados[1];
+
+          const votosBloque = entradas
+            .filter((e) => bloque.some((b) => e.partido === b || e.partido.includes(b)))
+            .reduce((acc, e) => acc + e.votos, 0);
+
+          const votosMaxOtro = entradas
+            .filter((e) => !bloque.some((b) => e.partido === b || e.partido.includes(b)))
+            .reduce((acc, e) => Math.max(acc, e.votos), 0);
+
+          const ganoBloque = votosBloque >= (ganador?.votos || 0) && votosBloque > 0;
+          if (ganoBloque) vecesGana += 1;
+
+          if (tendenciaBaseFinal === null) tendenciaBaseFinal = votosBloque;
+          tendenciaBaseInicial = votosBloque;
+
+          if (ganador) ganadoresHistoricos[ganador.partido] = (ganadoresHistoricos[ganador.partido] || 0) + 1;
+
+          porAnio[String(anio)] = {
+            votos_bloque: votosBloque,
+            votos_ganador: ganador?.votos || 0,
+            votos_segundo: segundo?.votos || 0,
+            gano_bloque: ganoBloque,
+            pct_bloque: celda.votos_validos > 0 ? Number(((votosBloque / celda.votos_validos) * 100).toFixed(2)) : 0,
+            total_votos: celda.total_votos,
+            votos_validos: celda.votos_validos,
+            lista_nominal: celda.lista_nominal,
+            ganador: ganador?.partido,
+            segundo: segundo?.partido,
+          };
+        }
+
+        const totalAnios = anios.length;
+        let clasificacion: string;
+        if (vecesGana === totalAnios) clasificacion = 'BASTION';
+        else if (vecesGana === 0) clasificacion = 'RIVAL';
+        else if (vecesGana >= totalAnios / 2) clasificacion = 'VOLATIL_GANA';
+        else clasificacion = 'VOLATIL_PIERDE';
+
+        const ganadorHistoricoDominante = Object.entries(ganadoresHistoricos)
+          .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+        return {
+          seccion,
+          anios: porAnio,
+          veces_gana: vecesGana,
+          total_anios: totalAnios,
+          siempre_gana: vecesGana === totalAnios,
+          siempre_pierde: vecesGana === 0,
+          tendencia: (tendenciaBaseFinal || 0) - (tendenciaBaseInicial || 0),
+          clasificacion,
+          ganador_historico_dominante: ganadorHistoricoDominante,
+        };
+      });
+
+    return {
+      secciones: resultadoSecciones,
+      metadata: {
+        anios,
+        bloque,
+        partido_principal: partidoPrincipal,
+        total_secciones: resultadoSecciones.length,
+      },
+    };
+  }
+
+  private inferirBloque(partidoPrincipal: string, rows: any[]): string[] {
+    const bloque = new Set<string>([partidoPrincipal]);
+    const nombresActores = new Set<string>();
+    for (const r of rows) {
+      const desglose = (r.desglose_partidos || []) as any[];
+      for (const actor of desglose) {
+        const nombre = String(actor.partido || actor.nombre || '').toUpperCase().trim();
+        if (nombre) nombresActores.add(nombre);
+      }
+    }
+    for (const actor of nombresActores) {
+      if (actor.includes(partidoPrincipal) && actor.includes('_')) {
+        bloque.add(actor);
+      }
+    }
+    return Array.from(bloque);
+  }
+
+  // =====================================================
   // EXPLORACIÓN RAW DEL ARCHIVO
   // =====================================================
   previewRaw(archivo: Express.Multer.File, limite = 30) {

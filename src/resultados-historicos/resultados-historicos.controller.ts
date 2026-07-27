@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { ResultadosHistoricosService } from './resultados-historicos.service';
 import { FiltrosResultadosDto } from './dto/filtros-resultados.dto';
+import { CruceResultadosDto } from './dto/cruce-resultados.dto';
 import { ImportarResultadosDto, PreviewResultadosDto } from './dto/importar-resultados.dto';
 
 @Controller('resultados-historicos')
@@ -46,6 +47,11 @@ export class ResultadosHistoricosController {
         'presidente_republica',
       ],
     };
+  }
+
+  @Get('cruce')
+  cruce(@Query() query: CruceResultadosDto, @Req() req: any) {
+    return this.service.cruce(req.tenant.id, query);
   }
 
   @Post('preview-raw')
