@@ -29,9 +29,9 @@ async function main() {
   console.log('✅ Tenant creado:', tenant.slug);
 
   const permisosPorRol: Record<UserRole, string[]> = {
-    [UserRole.owner]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'candidato', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'usuarios', 'app_brigada'],
-    [UserRole.candidato]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'candidato', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'usuarios', 'app_brigada'],
-    [UserRole.coord_general]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'app_brigada'],
+    [UserRole.owner]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'candidato', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'opositores', 'data', 'usuarios', 'app_brigada'],
+    [UserRole.candidato]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'candidato', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'opositores', 'data', 'usuarios', 'app_brigada'],
+    [UserRole.coord_general]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'boletines', 'llamadas', 'encuestas', 'casillas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral', 'opositores', 'data', 'app_brigada'],
     [UserRole.coord_zona]: ['dashboard', 'votantes', 'crm', 'eventos', 'mapa', 'encuestas', 'casillas', 'monitoreo', 'ficha_seccional', 'app_brigada'],
     [UserRole.brigadista]: ['app_brigada'],
     [UserRole.cm]: ['dashboard', 'crm', 'boletines', 'candidato', 'encuestas', 'monitoreo', 'proyeccion', 'ficha_seccional', 'historico_electoral', 'inteligencia_electoral'],
