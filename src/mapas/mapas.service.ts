@@ -935,9 +935,183 @@ export class MapasService {
     });
   }
 
-  private idFeature(feature: any): string {
+  // ======================
+  // FEATURES INDIVIDUALES DE UNA CAPA
+  // ======================
+  private getFeaturesCollection(capa: any) {
+    const geo = capa.geojson as any;
+    if (!geo) return { features: [] };
+    return geo.type === 'FeatureCollection'
+      ? geo
+      : { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: geo, properties: {} }] };
+  }
+
+  private getFeatureEstilos(capa: any, featureId: string) {
+    const estilos = (capa.estilos as Record<string, any>) || {};
+    return estilos[featureId] || {};
+  }
+
+  private featureResponse(feature: any, featureId: string, capa: any): any {
+    const estilos = this.getFeatureEstilos(capa, featureId);
+    const nombre = estilos.nombre || this.nombreFeature(feature);
+    const color = estilos.color || capa.color;
+    const opacidad = estilos.opacidad != null ? Number(estilos.opacidad) : 1;
+    const bloqueado = Boolean(estilos.bloqueado);
+    const metadata = estilos.metadata || {};
+    return {
+      feature_id: featureId,
+      nombre,
+      color,
+      opacidad,
+      bloqueado,
+      metadata,
+      properties: feature.properties || {},
+      geometry: feature.geometry,
+      bbox: feature.geometry ? bboxFromGeometry(feature.geometry) : undefined,
+    };
+  }
+
+  async findAllFeatures(
+    capaId: string,
+    tenantId: string,
+    q?: string,
+    limit = 50,
+    offset = 0,
+  ) {
+    const capa = await this.findOneCapa(capaId, tenantId);
+    const collection = this.getFeaturesCollection(capa);
+    const termino = (q || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    let features = collection.features || [];
+    if (termino) {
+      features = features.filter((f: any) => {
+        const id = this.idFeature(f);
+        const estilos = this.getFeatureEstilos(capa, id);
+        const nombre = String(estilos.nombre || this.nombreFeature(f)).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const metadataValues = Object.values(estilos.metadata || {})
+          .filter((v: any) => v != null)
+          .map((v: any) => String(v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''));
+        const propValues = Object.values(f.properties || {})
+          .filter((v: any) => v != null)
+          .map((v: any) => String(v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''));
+        return nombre.includes(termino) || metadataValues.some((v: string) => v.includes(termino)) || propValues.some((v: string) => v.includes(termino)) || id.toLowerCase().includes(termino);
+      });
+    }
+
+    // Ordenar alfabéticamente
+    features.sort((a: any, b: any) => {
+      const nombreA = this.nombreFeature(a);
+      const nombreB = this.nombreFeature(b);
+      return nombreA.localeCompare(nombreB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    const total = features.length;
+    const paginados = features.slice(offset, offset + limit).map((f: any, idx: number) => {
+      const id = this.idFeature(f, idx + offset);
+      return this.featureResponse(f, id, capa);
+    });
+
+    return { total, offset, limit, items: paginados };
+  }
+
+  async findOneFeature(capaId: string, featureId: string, tenantId: string) {
+    const capa = await this.findOneCapa(capaId, tenantId);
+    const collection = this.getFeaturesCollection(capa);
+    const feature = (collection.features || []).find((f: any, idx: number) => {
+      const id = this.idFeature(f, idx);
+      return String(id) === String(featureId);
+    });
+    if (!feature) throw new NotFoundException('Polígono no encontrado');
+    return this.featureResponse(feature, featureId, capa);
+  }
+
+  async updateFeature(capaId: string, featureId: string, data: any, tenantId: string) {
+    const capa = await this.findOneCapa(capaId, tenantId);
+    const collection = this.getFeaturesCollection(capa);
+    const index = (collection.features || []).findIndex((f: any, idx: number) => {
+      const id = this.idFeature(f, idx);
+      return String(id) === String(featureId);
+    });
+    if (index === -1) throw new NotFoundException('Polígono no encontrado');
+
+    const estilos = { ...(capa.estilos as Record<string, any> || {}) };
+    const featureEstilos = { ...(estilos[featureId] || {}) };
+
+    if (data.nombre !== undefined) featureEstilos.nombre = String(data.nombre).trim() || undefined;
+    if (data.color !== undefined) featureEstilos.color = String(data.color).trim();
+    if (data.opacidad !== undefined) {
+      const op = Number(data.opacidad);
+      featureEstilos.opacidad = Number.isNaN(op) ? 1 : Math.max(0, Math.min(1, op));
+    }
+    if (data.bloqueado !== undefined) featureEstilos.bloqueado = Boolean(data.bloqueado);
+    if (data.metadata !== undefined) {
+      featureEstilos.metadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : {};
+    }
+
+    estilos[featureId] = featureEstilos;
+    const actualizada = await this.prisma.capaMapa.update({
+      where: { id: capaId },
+      data: { estilos },
+      include: { creador: { select: { id: true, nombre: true } } },
+    });
+
+    return this.featureResponse(collection.features[index], featureId, actualizada);
+  }
+
+  async cruceFeature(capaId: string, featureId: string, tenantId: string) {
+    const feature = await this.findOneFeature(capaId, featureId, tenantId);
+    const geometry = this.normalizarAMultiPolygon(feature.geometry);
+    if (!geometry || !['Point', 'Polygon', 'MultiPolygon'].includes(geometry.type)) {
+      throw new BadRequestException('La geometría del polígono no es válida');
+    }
+    return this.detalleTerritorial(tenantId, {
+      tipo: 'capa_feature',
+      id: featureId,
+      nombre: feature.nombre,
+      geometry,
+      seccion: feature.metadata?.seccion,
+    });
+  }
+
+  private idFeature(feature: any, index?: number): string {
     const p = feature?.properties || {};
-    return p.id || p.ID || p.Id || p.OBJECTID || p.objectid || p.FID || p.fid || p.gid || p.GID || p.uid || p.UID || Math.random().toString(36).slice(2);
+    const idProp =
+      p.id || p.ID || p.Id || p.OBJECTID || p.objectid || p.FID || p.fid || p.gid || p.GID || p.uid || p.UID || p.uid_ || p.UID_ || p.gid_ || p.GID_;
+    if (idProp) return String(idProp).trim();
+
+    // Fallback estable: hash de la geometría truncada
+    const hash = this.hashGeometria(feature?.geometry);
+    if (hash) return hash;
+
+    // Último recurso: índice si se proporciona
+    if (index != null) return `feature-${index}`;
+    return Math.random().toString(36).slice(2);
+  }
+
+  private hashGeometria(geometry: any): string | null {
+    if (!geometry || !geometry.coordinates) return null;
+    try {
+      const coords: number[] = [];
+      const walk = (node: any) => {
+        if (Array.isArray(node)) {
+          if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+            coords.push(Math.round(node[0] * 1e6) / 1e6, Math.round(node[1] * 1e6) / 1e6);
+          } else {
+            node.forEach(walk);
+          }
+        }
+      };
+      walk(geometry.coordinates);
+      if (coords.length === 0) return null;
+      // DJB2 simple
+      let h = 5381;
+      for (const c of coords) {
+        h = ((h << 5) + h) + c;
+      }
+      return Math.abs(h).toString(36).slice(0, 16);
+    } catch {
+      return null;
+    }
   }
 
   private nombreFeature(feature: any): string {
@@ -1568,14 +1742,17 @@ export class MapasService {
     const estilosCapa = (capa.estilos as Record<string, any>) || {};
 
     // Inyectar propiedades de la capa en cada feature
-    const features = featuresFiltradas.map((f: any) => {
+    const features = featuresFiltradas.map((f: any, idx: number) => {
       const props = f.properties || {};
-      const idFeature = this.idFeature(f);
+      const idFeature = this.idFeature(f, idx);
       const nombreFeature = this.nombreFeature(f);
       const keyEstilo = estilosCapa[idFeature] ? idFeature : this.normalizarKeyFeature(nombreFeature);
       const estiloFeature = estilosCapa[keyEstilo] || {};
       const colorFeature = estiloFeature.color || estilosCapa[idFeature]?.color || capa.color;
       const nombreOverride = estiloFeature.nombre || nombreFeature;
+      const opacidad = estiloFeature.opacidad != null ? Number(estiloFeature.opacidad) : 1;
+      const bloqueado = Boolean(estiloFeature.bloqueado);
+      const metadataFeature = estiloFeature.metadata || {};
 
       const extra: Record<string, any> = {
         capa_id: capa.id,
@@ -1586,6 +1763,9 @@ export class MapasService {
         _feature_id: idFeature,
         _feature_nombre: nombreOverride,
         _feature_color: colorFeature,
+        _feature_opacidad: opacidad,
+        _feature_bloqueado: bloqueado,
+        _feature_metadata: metadataFeature,
       };
 
       if (esIne) {

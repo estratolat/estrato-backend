@@ -53,6 +53,52 @@ export class MapasController {
     return this.mapasService.removeCapa(id, req.tenant.id);
   }
 
+  // Features individuales de una capa
+  @Get('capas/:id/features')
+  findAllFeatures(
+    @Param('id') id: string,
+    @Query('q') q: string,
+    @Query('limit') limit: string,
+    @Query('offset') offset: string,
+    @Req() req: any,
+  ) {
+    return this.mapasService.findAllFeatures(
+      id,
+      req.tenant.id,
+      q,
+      limit ? parseInt(limit, 10) : 50,
+      offset ? parseInt(offset, 10) : 0,
+    );
+  }
+
+  @Get('capas/:id/features/:featureId')
+  findOneFeature(
+    @Param('id') id: string,
+    @Param('featureId') featureId: string,
+    @Req() req: any,
+  ) {
+    return this.mapasService.findOneFeature(id, featureId, req.tenant.id);
+  }
+
+  @Patch('capas/:id/features/:featureId')
+  updateFeature(
+    @Param('id') id: string,
+    @Param('featureId') featureId: string,
+    @Body() data: any,
+    @Req() req: any,
+  ) {
+    return this.mapasService.updateFeature(id, featureId, data, req.tenant.id);
+  }
+
+  @Post('capas/:id/features/:featureId/cruce')
+  cruceFeature(
+    @Param('id') id: string,
+    @Param('featureId') featureId: string,
+    @Req() req: any,
+  ) {
+    return this.mapasService.cruceFeature(id, featureId, req.tenant.id);
+  }
+
   // GeoJSON por capas
   @Get('geojson')
   geojson(@Query() query: any, @Req() req: any) {
