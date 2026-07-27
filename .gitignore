@@ -7,7 +7,8 @@ dist
 
 # Scripts temporales de importación / diagnóstico (contienen credenciales)
 /*.js
-/scripts/
+/scripts/*
+!/scripts/ine-maps/
 
 # Logs
 *.log

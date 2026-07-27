@@ -1,0 +1,13 @@
+# Archivos generados por el script de descarga INE
+salida/
+tmp/
+.DS_Store
+*.zip
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.sbn
+*.sbx
+*.xml
