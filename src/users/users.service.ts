@@ -215,13 +215,20 @@ export class UsersService {
         });
         invitadorNombre = creador?.nombre || undefined;
       }
-      // Envío asíncrono: no bloqueamos la respuesta del API
-      this.mailService
-        .sendInvitationEmail(usuario.email, usuario.nombre || '', invitationUrl, invitadorNombre)
-        .catch((err) => {
-          // El error ya se loguea en MailService
-          console.error('Fallo envío de invitación:', err.message);
-        });
+      // En serverless (Vercel) debemos esperar el envío; si no, la función puede
+      // congelarse/terminar antes de que Nodemailer complete la entrega.
+      try {
+        await this.mailService.sendInvitationEmail(
+          usuario.email,
+          usuario.nombre || '',
+          invitationUrl,
+          invitadorNombre,
+        );
+      } catch (err: any) {
+        // Logueamos el fallo completo, pero no bloqueamos la creación del usuario:
+        // el admin puede reenviar la invitación si es necesario.
+        console.error(`Fallo envío de invitación a ${usuario.email}:`, err.message);
+      }
     }
 
     return usuario;
