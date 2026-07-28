@@ -248,7 +248,7 @@ export class UsersService {
     });
   }
 
-  async remove(id: string, tenantId: string, ejecutorId?: string) {
+  async deactivate(id: string, tenantId: string, ejecutorId?: string) {
     if (id === ejecutorId) {
       throw new ForbiddenException('No puedes desactivar tu propio usuario');
     }
@@ -256,6 +256,17 @@ export class UsersService {
     return this.prisma.usuario.update({
       where: { id },
       data: { activo: false },
+      include: { zona: { select: { id: true, nombre: true } } },
+    });
+  }
+
+  async remove(id: string, tenantId: string, ejecutorId?: string) {
+    if (id === ejecutorId) {
+      throw new ForbiddenException('No puedes eliminar tu propio usuario');
+    }
+    await this.findOne(id, tenantId);
+    return this.prisma.usuario.delete({
+      where: { id },
       include: { zona: { select: { id: true, nombre: true } } },
     });
   }

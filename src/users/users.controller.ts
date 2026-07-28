@@ -71,9 +71,16 @@ export class UsersController {
     return this.usersService.update(id, data, req.tenant.id);
   }
 
-  @Delete(':id')
+  @Patch(':id/desactivar')
   @Roles('owner', 'candidato')
   @ApiOperation({ summary: 'Desactivar usuario' })
+  deactivate(@Param('id') id: string, @Req() req) {
+    return this.usersService.deactivate(id, req.tenant.id, req.user.userId);
+  }
+
+  @Delete(':id')
+  @Roles('owner', 'candidato')
+  @ApiOperation({ summary: 'Eliminar usuario permanentemente' })
   remove(@Param('id') id: string, @Req() req) {
     return this.usersService.remove(id, req.tenant.id, req.user.userId);
   }
