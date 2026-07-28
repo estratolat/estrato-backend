@@ -28,6 +28,11 @@ export class MailService {
   ): Promise<void> {
     const from = this.config.get('EMAIL_FROM', 'admin@estrato.lat');
     const fromName = this.config.get('EMAIL_FROM_NAME', 'ESTRATO');
+    const apiKey = this.config.get('RESEND_API_KEY', '') || '';
+
+    this.logger.log(
+      `[MailService] Preparando envío a ${to} | host=${this.config.get('EMAIL_HOST')} | keyPrefix=${apiKey.slice(0, 8)}...`,
+    );
 
     try {
       await this.transporter.sendMail({
