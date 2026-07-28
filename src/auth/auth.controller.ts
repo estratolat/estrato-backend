@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -38,5 +38,19 @@ export class AuthController {
   @ApiOperation({ summary: 'Obtener usuario actual' })
   async getMe(@Req() req) {
     return this.authService.getMe(req.user.userId);
+  }
+
+  @Post('invitacion/aceptar')
+  @ApiOperation({ summary: 'Aceptar invitación y definir contraseña' })
+  async aceptarInvitacion(
+    @Body() body: { token: string; password: string; confirmar_password?: string },
+  ) {
+    if (!body.token || !body.password) {
+      throw new BadRequestException('Token y contraseña son obligatorios');
+    }
+    if (body.confirmar_password !== undefined && body.password !== body.confirmar_password) {
+      throw new BadRequestException('Las contraseñas no coinciden');
+    }
+    return this.authService.aceptarInvitacion(body.token, body.password);
   }
 }

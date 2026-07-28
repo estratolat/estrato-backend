@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../common/services/prisma.service';
 import * as bcrypt from 'bcryptjs';
@@ -100,6 +100,42 @@ export class AuthService {
       return result;
     }
     return null;
+  }
+
+  async aceptarInvitacion(token: string, password: string) {
+    if (!password || password.length < 6) {
+      throw new BadRequestException('La contraseña debe tener al menos 6 caracteres');
+    }
+
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { invitation_token: token },
+      include: { tenant: true },
+    });
+
+    if (!usuario) {
+      throw new BadRequestException('Token de invitación inválido');
+    }
+
+    if (usuario.invitation_expires_at && new Date() > usuario.invitation_expires_at) {
+      throw new BadRequestException('El enlace de invitación ha expirado');
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+
+    await this.prisma.usuario.update({
+      where: { id: usuario.id },
+      data: {
+        password_hash,
+        invitation_token: null,
+        invitation_expires_at: null,
+      },
+    });
+
+    return {
+      mensaje: 'Cuenta activada correctamente',
+      email: usuario.email,
+      tenant_slug: usuario.tenant?.slug,
+    };
   }
 
   private permisosPorRol(rol: string): string[] {

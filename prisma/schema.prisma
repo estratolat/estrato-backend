@@ -153,6 +153,8 @@ model Usuario {
   zona_id       String?  @db.Uuid // null si ve todo
   permisos      Json? // Array de strings con ids de secciones permitidas ej. ["dashboard","votantes"]
   activo        Boolean  @default(true)
+  invitation_token String? @unique // Token para activar cuenta por correo
+  invitation_expires_at DateTime? // Fecha de expiración del token de invitación
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 

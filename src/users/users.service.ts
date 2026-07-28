@@ -5,8 +5,11 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
+import { MailService } from '../common/services/mail.service';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { UserRole } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 const ROLES_VALIDOS: UserRole[] = [
   'owner',
@@ -151,7 +154,11 @@ export const SECCIONES_DISPONIBLES = [
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mailService: MailService,
+    private config: ConfigService,
+  ) {}
 
   async findAll(tenantId: string) {
     return this.prisma.usuario.findMany({
@@ -185,10 +192,39 @@ export class UsersService {
       throw new BadRequestException('Ya existe un usuario con ese email');
     }
 
-    return this.prisma.usuario.create({
+    // Si no trae password propia, generar invitación por correo
+    const usarInvitacion = !payload.password_hash;
+    if (usarInvitacion) {
+      payload.invitation_token = randomUUID();
+      payload.invitation_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    }
+
+    const usuario = await this.prisma.usuario.create({
       data: payload,
       include: { zona: { select: { id: true, nombre: true } } },
     });
+
+    if (usarInvitacion) {
+      const appUrl = this.config.get('APP_URL', 'https://estrato.lat');
+      const invitationUrl = `${appUrl}/invitacion?token=${usuario.invitation_token}`;
+      let invitadorNombre: string | undefined;
+      if (creadorId) {
+        const creador = await this.prisma.usuario.findUnique({
+          where: { id: creadorId },
+          select: { nombre: true },
+        });
+        invitadorNombre = creador?.nombre || undefined;
+      }
+      // Envío asíncrono: no bloqueamos la respuesta del API
+      this.mailService
+        .sendInvitationEmail(usuario.email, usuario.nombre || '', invitationUrl, invitadorNombre)
+        .catch((err) => {
+          // El error ya se loguea en MailService
+          console.error('Fallo envío de invitación:', err.message);
+        });
+    }
+
+    return usuario;
   }
 
   async update(id: string, data: any, tenantId: string) {
@@ -265,7 +301,8 @@ export class UsersService {
     }
 
     if (!esUpdate && !payload.password_hash) {
-      throw new BadRequestException('La contraseña es obligatoria para crear un usuario');
+      // No se envió password: se creará con token de invitación por correo
+      payload.password_hash = null;
     }
 
     if (data.rol !== undefined) {
