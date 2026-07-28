@@ -185,8 +185,8 @@ export class UsersService {
     const payload = await this.normalizar(data, tenantId, false, creadorId);
 
     // Evitar duplicados de email dentro del tenant
-    const existente = await this.prisma.usuario.findUnique({
-      where: { email: payload.email },
+    const existente = await this.prisma.usuario.findFirst({
+      where: { email: payload.email, tenant_id: tenantId },
     });
     if (existente) {
       throw new BadRequestException('Ya existe un usuario con ese email');
@@ -238,10 +238,10 @@ export class UsersService {
     await this.findOne(id, tenantId); // valida existencia y tenant
     const payload = await this.normalizar(data, tenantId, true);
 
-    // Si se cambia el email, validar duplicado
+    // Si se cambia el email, validar duplicado dentro del mismo tenant
     if (payload.email) {
       const existente = await this.prisma.usuario.findFirst({
-        where: { email: payload.email, id: { not: id } },
+        where: { email: payload.email, id: { not: id }, tenant_id: tenantId },
       });
       if (existente) {
         throw new BadRequestException('Ya existe otro usuario con ese email');
@@ -254,6 +254,7 @@ export class UsersService {
       include: { zona: { select: { id: true, nombre: true } } },
     });
   }
+
 
   async deactivate(id: string, tenantId: string, ejecutorId?: string) {
     if (id === ejecutorId) {
@@ -276,6 +277,41 @@ export class UsersService {
       where: { id },
       include: { zona: { select: { id: true, nombre: true } } },
     });
+  }
+
+  async reenviarInvitacion(id: string, tenantId: string, creadorId?: string) {
+    const usuario = await this.findOne(id, tenantId);
+    if (usuario.password_hash) {
+      throw new BadRequestException('El usuario ya tiene contraseña definida');
+    }
+
+    const invitation_token = randomUUID();
+    const invitation_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await this.prisma.usuario.update({
+      where: { id },
+      data: { invitation_token, invitation_expires_at },
+    });
+
+    const appUrl = this.config.get('APP_URL', 'https://estrato.lat');
+    const invitationUrl = `${appUrl}/invitacion?token=${invitation_token}`;
+
+    let invitadorNombre: string | undefined;
+    if (creadorId) {
+      const creador = await this.prisma.usuario.findUnique({
+        where: { id: creadorId },
+        select: { nombre: true },
+      });
+      invitadorNombre = creador?.nombre || undefined;
+    }
+
+    await this.mailService.sendInvitationEmail(
+      usuario.email,
+      usuario.nombre || '',
+      invitationUrl,
+      invitadorNombre,
+    );
+
+    return { ok: true, email: usuario.email, invitation_expires_at };
   }
 
   permisosPorRol(rol: UserRole): string[] {

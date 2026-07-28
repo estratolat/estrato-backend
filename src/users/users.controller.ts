@@ -84,4 +84,11 @@ export class UsersController {
   remove(@Param('id') id: string, @Req() req) {
     return this.usersService.remove(id, req.tenant.id, req.user.userId);
   }
+
+  @Post(':id/reenviar-invitacion')
+  @Roles('owner', 'candidato')
+  @ApiOperation({ summary: 'Reenviar correo de invitación' })
+  resendInvitation(@Param('id') id: string, @Req() req) {
+    return this.usersService.reenviarInvitacion(id, req.tenant.id, req.user.userId);
+  }
 }
