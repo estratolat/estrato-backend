@@ -4,6 +4,8 @@ import { MapasService } from './mapas.service';
 import { GisParserService } from './gis-parser.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
+import { PermisosGuard } from '../common/guards/permisos.guard';
+import { RequierePermiso } from '../common/decorators/permisos.decorator';
 import { ImportarSeccionesIneDto } from './dto/importar-secciones-ine.dto';
 import { ImportarSeccionesExcelDto } from './dto/importar-secciones-excel.dto';
 import { BuscarGlobalDto } from './dto/buscar-global.dto';
@@ -11,7 +13,8 @@ import { DetalleTerritorialDto } from './dto/detalle-territorial.dto';
 import { ActualizarEstilosCapaDto } from './dto/actualizar-estilos-capa.dto';
 
 @Controller('mapas')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermisosGuard)
+@RequierePermiso('mapa')
 export class MapasController {
   constructor(
     private readonly mapasService: MapasService,
