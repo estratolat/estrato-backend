@@ -22,6 +22,21 @@ const ROLES_VALIDOS: UserRole[] = [
   'superadmin',
 ];
 
+const ROLES_APP_BRIGADA: UserRole[] = ['brigadista', 'coord_zona', 'coord_general'];
+
+function generarPin(longitud = 4): string {
+  const digitos = '0123456789';
+  let pin = '';
+  for (let i = 0; i < longitud; i++) {
+    pin += digitos.charAt(Math.floor(Math.random() * digitos.length));
+  }
+  return pin;
+}
+
+function esRolBrigada(rol?: UserRole | string): boolean {
+  return !!rol && ROLES_APP_BRIGADA.includes(rol as UserRole);
+}
+
 const PERMISOS_POR_ROL: Record<UserRole, string[]> = {
   owner: [
     'dashboard',
@@ -192,8 +207,11 @@ export class UsersService {
       throw new BadRequestException('Ya existe un usuario con ese email');
     }
 
-    // Si no trae password propia, generar invitación por correo
-    const usarInvitacion = !payload.password_hash;
+    const rolBrigada = esRolBrigada(payload.rol);
+
+    // Usuarios de panel (no brigada) sin password: invitación por correo
+    // Usuarios de brigada: siempre usan teléfono+PIN, nunca invitación de panel
+    const usarInvitacion = !rolBrigada && !payload.password_hash;
     if (usarInvitacion) {
       payload.invitation_token = randomUUID();
       payload.invitation_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -204,19 +222,31 @@ export class UsersService {
       include: { zona: { select: { id: true, nombre: true } } },
     });
 
-    if (usarInvitacion) {
+    let invitadorNombre: string | undefined;
+    if (creadorId) {
+      const creador = await this.prisma.usuario.findUnique({
+        where: { id: creadorId },
+        select: { nombre: true },
+      });
+      invitadorNombre = creador?.nombre || undefined;
+    }
+
+    if (rolBrigada) {
+      // En serverless (Vercel) debemos esperar el envío
+      try {
+        await this.mailService.sendBrigadaWelcomeEmail(
+          usuario.email,
+          usuario.nombre || '',
+          usuario.telefono || payload.telefono,
+          usuario.pin || payload.pin,
+          invitadorNombre,
+        );
+      } catch (err: any) {
+        console.error(`Fallo envío de correo de brigada a ${usuario.email}:`, err.message);
+      }
+    } else if (usarInvitacion) {
       const appUrl = this.config.get('APP_URL', 'https://estrato.lat');
       const invitationUrl = `${appUrl}/invitacion?token=${usuario.invitation_token}`;
-      let invitadorNombre: string | undefined;
-      if (creadorId) {
-        const creador = await this.prisma.usuario.findUnique({
-          where: { id: creadorId },
-          select: { nombre: true },
-        });
-        invitadorNombre = creador?.nombre || undefined;
-      }
-      // En serverless (Vercel) debemos esperar el envío; si no, la función puede
-      // congelarse/terminar antes de que Nodemailer complete la entrega.
       try {
         await this.mailService.sendInvitationEmail(
           usuario.email,
@@ -225,10 +255,13 @@ export class UsersService {
           invitadorNombre,
         );
       } catch (err: any) {
-        // Logueamos el fallo completo, pero no bloqueamos la creación del usuario:
-        // el admin puede reenviar la invitación si es necesario.
         console.error(`Fallo envío de invitación a ${usuario.email}:`, err.message);
       }
+    }
+
+    // Devolver el PIN generado para que el frontend pueda mostrarlo al admin
+    if (rolBrigada) {
+      return { ...usuario, pin_generado: usuario.pin || payload.pin };
     }
 
     return usuario;
@@ -365,6 +398,16 @@ export class UsersService {
         throw new BadRequestException(`Rol inválido: ${data.rol}`);
       }
       payload.rol = rol;
+    }
+
+    // Para roles de app de brigada: teléfono obligatorio y PIN auto-generado si no se envió
+    if (!esUpdate && esRolBrigada(payload.rol)) {
+      if (!payload.telefono) {
+        throw new BadRequestException('El teléfono es obligatorio para brigadistas y coordinadores de zona');
+      }
+      if (!payload.pin) {
+        payload.pin = generarPin(4);
+      }
     }
 
     if (data.zona_id !== undefined) {
