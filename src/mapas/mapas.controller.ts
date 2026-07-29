@@ -48,6 +48,15 @@ export class MapasController {
     return this.mapasService.updateEstilosCapa(id, dto.estilos, req.tenant.id);
   }
 
+  @Post('capas/:id/features')
+  agregarFeatures(
+    @Param('id') id: string,
+    @Body('geojson') geojson: any,
+    @Req() req: any,
+  ) {
+    return this.mapasService.agregarFeatures(id, geojson, req.tenant.id);
+  }
+
   @Delete('capas/:id')
   removeCapa(@Param('id') id: string, @Req() req: any) {
     return this.mapasService.removeCapa(id, req.tenant.id);

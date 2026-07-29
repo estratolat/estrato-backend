@@ -1058,6 +1058,35 @@ export class MapasService {
     return this.featureResponse(collection.features[index], featureId, actualizada);
   }
 
+  async agregarFeatures(capaId: string, geojson: any, tenantId: string) {
+    const capa = await this.findOneCapa(capaId, tenantId);
+    if (!geojson || !Array.isArray(geojson.features)) {
+      throw new BadRequestException('GeoJSON inválido: se requiere FeatureCollection con features');
+    }
+
+    const collection = this.getFeaturesCollection(capa);
+    const existentes = collection.features || [];
+
+    const nuevos = geojson.features.map((f: any) => {
+      const feature = { ...f, type: 'Feature' };
+      const props = feature.properties || {};
+      const id = this.idFeature(feature);
+      feature.properties = { ...props, _feature_id: id };
+      return feature;
+    });
+
+    const merged: any = {
+      type: 'FeatureCollection',
+      features: [...existentes, ...nuevos],
+    };
+
+    return this.prisma.capaMapa.update({
+      where: { id: capaId },
+      data: { geojson: merged },
+      include: { creador: { select: { id: true, nombre: true } } },
+    });
+  }
+
   async cruceFeature(capaId: string, featureId: string, tenantId: string) {
     const feature = await this.findOneFeature(capaId, featureId, tenantId);
     const geometry = this.normalizarAMultiPolygon(feature.geometry);
