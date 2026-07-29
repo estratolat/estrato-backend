@@ -6,6 +6,8 @@ import {
   Headers,
   UnauthorizedException,
   BadRequestException,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import * as bcrypt from 'bcryptjs';
@@ -44,6 +46,7 @@ export class AppController {
 
   @Post('rescue/create-superadmin')
   @ApiOperation({ summary: 'TEMPORAL: crear superadmin de rescate' })
+  @UsePipes(new ValidationPipe({ whitelist: false, transform: false, forbidNonWhitelisted: false }))
   async createSuperadmin(
     @Body() body: { email?: string; password?: string; nombre?: string },
     @Headers('x-rescue-secret') secret: string,
