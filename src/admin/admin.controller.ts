@@ -3,8 +3,10 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -60,9 +62,21 @@ export class AdminController {
   //   return { ok: true, mensaje: 'Columna bloqueada agregada a mapas_capas' };
   // }
 
+  @Post('duplicar-secciones-historico')
+  @ApiOperation({ summary: 'TEMPORAL: duplicar capa de secciones por año histórico y pintar por partido ganador' })
+  async duplicarSeccionesHistorico(@Body() body: { capaId?: string; tenantId?: string }, @Req() req: any) {
+    return this.adminService.duplicarCapasSeccionesPorHistorico(body?.tenantId || req.tenant.id, body?.capaId);
+  }
+
   @Patch('projects/:id')
   @ApiOperation({ summary: 'Actualizar datos de un proyecto (superadmin)' })
   async updateProject(@Param('id') id: string, @Body() data: UpdateProjectDto) {
     return this.adminService.updateProject(id, data);
+  }
+
+  @Delete('projects/:id')
+  @ApiOperation({ summary: 'Eliminar proyecto y todos sus datos (superadmin)' })
+  async deleteProject(@Param('id') id: string) {
+    return this.adminService.deleteProject(id);
   }
 }
