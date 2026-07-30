@@ -2187,6 +2187,7 @@ export class MapasService {
                 color: c.color,
                 bbox: geo ? bboxFromGeometry(geo) : undefined,
                 geometry: geo,
+                bloqueada: Boolean(c.bloqueada),
               };
             });
           }),
@@ -2199,7 +2200,7 @@ export class MapasService {
         this.prisma.capaMapa
           .findMany({
             where: { tenant_id: tenantId },
-            select: { id: true, nombre: true, color: true, geojson: true, estilos: true, tipo: true },
+            select: { id: true, nombre: true, color: true, bloqueada: true, geojson: true, estilos: true, tipo: true },
           })
           .then((rows) => {
             console.log('[buscarGlobal] capas a escanear:', rows.length, 'tipos:', rows.map(r => r.tipo));
@@ -2243,6 +2244,8 @@ export class MapasService {
                   color,
                   bbox: geo ? bboxFromGeometry(geo) : undefined,
                   geometry: geo,
+                  bloqueada: Boolean(c.bloqueada),
+                  bloqueado: Boolean(estiloFeature.bloqueado),
                 });
                 if (matches.length >= max) break;
               }
