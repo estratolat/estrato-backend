@@ -1093,12 +1093,13 @@ export class MapasService {
     if (!geometry || !['Point', 'Polygon', 'MultiPolygon'].includes(geometry.type)) {
       throw new BadRequestException('La geometría del polígono no es válida');
     }
+    const seccion = feature.metadata?.seccion || feature.properties?.seccion || feature.properties?.SECCION || undefined;
     return this.detalleTerritorial(tenantId, {
       tipo: 'capa_feature',
       id: featureId,
       nombre: feature.nombre,
       geometry,
-      seccion: feature.metadata?.seccion,
+      seccion,
     });
   }
 
