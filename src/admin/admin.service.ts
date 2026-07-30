@@ -334,7 +334,7 @@ export class AdminService {
   }
 
   async duplicarCapasSeccionesPorHistorico(tenantId: string, capaId?: string) {
-    const anios = [2021, 2024, 2028];
+    const anios = [2018, 2021, 2024];
 
     let capaBase: any = null;
     if (capaId) {
