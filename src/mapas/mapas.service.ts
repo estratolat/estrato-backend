@@ -1093,7 +1093,8 @@ export class MapasService {
     if (!geometry || !['Point', 'Polygon', 'MultiPolygon'].includes(geometry.type)) {
       throw new BadRequestException('La geometría del polígono no es válida');
     }
-    const seccion = feature.metadata?.seccion || feature.properties?.seccion || feature.properties?.SECCION || undefined;
+    const seccionRaw = feature.metadata?.seccion || feature.properties?.seccion || feature.properties?.SECCION || undefined;
+    const seccion = seccionRaw ? String(seccionRaw).replace(/\D/g, '').padStart(4, '0').slice(0, 4) : undefined;
     return this.detalleTerritorial(tenantId, {
       tipo: 'capa_feature',
       id: featureId,
@@ -2291,7 +2292,9 @@ export class MapasService {
       const bbox = bboxFromGeometry(geometry);
       const esPoligono = ['Polygon', 'MultiPolygon'].includes(geometry.type);
       const datosOficiales: any = {};
-      let seccionFiltro: string | undefined = dto.seccion;
+      let seccionFiltro: string | undefined = dto.seccion
+        ? String(dto.seccion).replace(/\D/g, '').padStart(4, '0').slice(0, 4)
+        : undefined;
 
       const ultimoResultado = seccionFiltro
         ? await this.prisma.resultadoHistorico.findFirst({
@@ -2339,6 +2342,7 @@ export class MapasService {
         nombre: dto.nombre,
         geometry,
         bbox,
+        seccion: seccionFiltro,
         datos_oficiales: datosOficiales,
         resumen: {
           votantes,
