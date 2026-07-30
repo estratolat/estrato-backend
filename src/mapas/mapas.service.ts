@@ -2296,12 +2296,14 @@ export class MapasService {
         ? String(dto.seccion).replace(/\D/g, '').padStart(4, '0').slice(0, 4)
         : undefined;
 
-      const ultimoResultado = seccionFiltro
-        ? await this.prisma.resultadoHistorico.findFirst({
+      const historicos = seccionFiltro
+        ? await this.prisma.resultadoHistorico.findMany({
             where: { tenant_id: tenantId, seccion: seccionFiltro },
-            orderBy: { anio: 'desc' },
+            orderBy: [{ anio: 'desc' }, { tipo_historico: 'asc' }, { tipo_eleccion: 'asc' }],
+            take: 20,
           })
-        : null;
+        : [];
+      const ultimoResultado = historicos[0] || null;
       if (ultimoResultado) {
         datosOficiales.partido_ganador = ultimoResultado.partido_ganador;
         datosOficiales.votos_ganador = ultimoResultado.votos_ganador;
@@ -2344,6 +2346,7 @@ export class MapasService {
         bbox,
         seccion: seccionFiltro,
         datos_oficiales: datosOficiales,
+        historico: historicos,
         resumen: {
           votantes,
           lideres,
