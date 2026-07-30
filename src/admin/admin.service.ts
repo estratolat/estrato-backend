@@ -411,10 +411,26 @@ export class AdminService {
         };
       }
 
+      const nombreNuevaCapa = `${capaBase.nombre} - ${anio}`;
+      const existente = await this.prisma.capaMapa.findFirst({
+        where: { tenant_id: tenantId, nombre: nombreNuevaCapa },
+      });
+      if (existente) {
+        creadas.push({
+          id: existente.id,
+          nombre: existente.nombre,
+          anio,
+          conHistorico,
+          sinHistorico,
+          saltada: true,
+        });
+        continue;
+      }
+
       const nuevaCapa = await this.prisma.capaMapa.create({
         data: {
           tenant_id: tenantId,
-          nombre: `${capaBase.nombre} - ${anio}`,
+          nombre: nombreNuevaCapa,
           tipo: capaBase.tipo || 'custom',
           origen: 'propia',
           color: '#9CA3AF',
