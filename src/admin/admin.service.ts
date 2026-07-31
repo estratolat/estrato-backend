@@ -334,7 +334,13 @@ export class AdminService {
   }
 
   async duplicarCapasSeccionesPorHistorico(tenantId: string, capaId?: string) {
-    const anios = [2018, 2021, 2024];
+    // Usar todos los años disponibles en el histórico del tenant
+    const aniosHistorico = await this.prisma.resultadoHistorico.groupBy({
+      by: ['anio'],
+      where: { tenant_id: tenantId },
+      orderBy: { anio: 'asc' },
+    });
+    const anios = aniosHistorico.map((h) => h.anio);
 
     let capaBase: any = null;
     if (capaId) {
