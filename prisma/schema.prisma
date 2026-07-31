@@ -826,6 +826,7 @@ model SeccionINE {
   distrito_local     Int?
   padron_2024        Int?
   lista_nominal_2024 Int?
+  padron_historico   Json? // {2021: {padron: 1234, lista_nominal: 1200}, 2026: {...}}
   casillas_total     Int? // total de casillas reportado por campaña
   meta               String? // meta / prioridad asignada por campaña
   observaciones      String? // notas de la sección

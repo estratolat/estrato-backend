@@ -2312,6 +2312,21 @@ export class MapasService {
         datosOficiales.participacion_pct = ultimoResultado.participacion_pct;
       }
 
+      // Numeralia electoral: padrón y lista nominal por sección
+      let numeralia: any = null;
+      if (seccionFiltro) {
+        const seccionIne = await this.prisma.seccionINE.findFirst({
+          where: { tenant_id: tenantId, seccion: seccionFiltro },
+        });
+        if (seccionIne) {
+          numeralia = {
+            padron_2024: seccionIne.padron_2024,
+            lista_nominal_2024: seccionIne.lista_nominal_2024,
+            padron_historico: seccionIne.padron_historico,
+          };
+        }
+      }
+
       let votantes = { count: 0, items: [] };
       let lideres = { count: 0, items: [] };
       let apoyos = { count: 0, items: [] };
@@ -2348,6 +2363,7 @@ export class MapasService {
         seccion: seccionFiltro,
         datos_oficiales: datosOficiales,
         historico: historicos,
+        numeralia,
         resumen: {
           votantes,
           lideres,
