@@ -2308,6 +2308,7 @@ export class MapasService {
         datosOficiales.partido_ganador = ultimoResultado.partido_ganador;
         datosOficiales.votos_ganador = ultimoResultado.votos_ganador;
         datosOficiales.votos_totales = ultimoResultado.total_votos;
+        datosOficiales.lista_nominal = ultimoResultado.lista_nominal;
         datosOficiales.participacion_pct = ultimoResultado.participacion_pct;
       }
 
