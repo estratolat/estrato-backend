@@ -175,8 +175,23 @@ export class VotantesService {
     payload.curp = this.limpiarTexto(data.curp || data.CURP || '');
     payload.seccion_electoral = this.limpiarTexto(data.seccion_electoral || data.seccion || data.Seccion || data.Sección || data.SECCION || '', 4);
     payload.colonia = this.limpiarTexto(data.colonia || data.Colonia || data.COLONIA || '');
+    payload.vereda = this.limpiarTexto(data.vereda || data.Vereda || data.VEREDA || '');
+    payload.comunidad = this.limpiarTexto(data.comunidad || data.Comunidad || data.COMUNIDAD || '');
     payload.municipio = this.limpiarTexto(data.municipio || data.Municipio || data.MUNICIPIO || '');
     payload.estado = this.limpiarTexto(data.estado || data.Estado || data.ESTADO || '');
+    payload.ocupacion = this.limpiarTexto(data.ocupacion || data.Ocupacion || data.Ocupación || data.OCUPACION || data.profesion || data.Profesion || data.Profesión || data.PROFESION || '');
+
+    // Redes sociales
+    const redesDefault: Record<string, string> = {};
+    const redesKeys = ['facebook', 'instagram', 'tiktok', 'whatsapp', 'twitter', 'linkedin', 'x'];
+    for (const key of redesKeys) {
+      const valor = data[key] || data[key.charAt(0).toUpperCase() + key.slice(1)] || data[key.toUpperCase()] || data[`${key}_url`] || data[`${key}_handle`];
+      if (valor) redesDefault[key] = String(valor).trim();
+    }
+    const redesInput = data.redes_sociales || data.redesSociales || data.redes || redesDefault;
+    if (redesInput && typeof redesInput === 'object' && Object.keys(redesInput).length > 0) {
+      payload.redes_sociales = redesInput;
+    }
 
     // Coordenadas (desde objeto coordenadas o campos sueltos)
     const coords = data.coordenadas || data.coordenadas_gps || data.ubicacion;

@@ -26,6 +26,7 @@ model Tenant {
   slogan                String?
   foto_url              String? // Logo/foto del candidato (data URL o URL externa)
   plan                  String   @default("basico") // basico, pro, enterprise
+  pais                  String   @default("mx") // mx, co, etc.
   veda_activa           Boolean  @default(false)
   activo                Boolean  @default(true)
   created_at            DateTime @default(now())
@@ -294,9 +295,13 @@ model Votante {
   curp                     String? // Encriptado
   seccion_electoral        String?   @db.VarChar(4)
   colonia                  String?
+  vereda                   String? // Colombia
+  comunidad                String? // México
   municipio                String?
   estado                   String?
   coordenadas              Json? // {lat: number, lng: number}
+  ocupacion                String?
+  redes_sociales           Json? // {facebook, instagram, tiktok, whatsapp, twitter, linkedin}
   nivel_apoyo              Int?      @db.SmallInt // 1-5
   tags                     String[]
   origen_qr                String? // valle-dorado-01
